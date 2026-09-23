@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "skk-l",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.L",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jp",
+      "sha256": "c791f578d1b4040fce282db29bc22b2cc7ea46f83e269fab2e0fa779e2967e40",
+      "bytes": 4489815,
+      "fetched_at": "2026-09-23T18:04:12.315828+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "skk-jinmei",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.jinmei",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jp",
+      "sha256": "4da9ae6277170f9a3a493cfa1b529442a97585b648dddb0e6c4e4090f32c8224",
+      "bytes": 627829,
+      "fetched_at": "2026-09-23T18:04:12.016247+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "skk-geo",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.geo",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jp",
+      "sha256": "02499290a221703678e0bd07803980b6bcf8481149dc1f982f7ab512b327d078",
+      "bytes": 2857056,
+      "fetched_at": "2026-09-23T18:04:12.327989+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "skk-station",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.station",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jp",
+      "sha256": "000708bf1b678c4b5365ebfa0415bfe72d29c0d7cdcca908880d2207fe4c34be",
+      "bytes": 536697,
+      "fetched_at": "2026-09-23T18:04:12.077567+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "skk-propernoun",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.propernoun",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jp",
+      "sha256": "1522693c2c7a009e159aed06c4d1d5ed07c7616903a53a947f505e96cc9db428",
+      "bytes": 497518,
+      "fetched_at": "2026-09-23T18:04:12.337821+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "skk-law",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.law",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jp",
+      "sha256": "11c674dfc8b106d12ba216e07fb8762e7d89df15a81fa79cc8e48984a6af03be",
+      "bytes": 397203,
+      "fetched_at": "2026-09-23T18:04:12.356715+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "skk-hukugougo",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.hukugougo",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jp",
+      "sha256": "8926e08f7b54f914b84bec074702d8b2c03691e30622eb0c18d211b8c8310be1",
+      "bytes": 249004,
+      "fetched_at": "2026-09-23T18:04:12.499916+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "skk-jis2004",
+      "format": "skk",
+      "url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.JIS2004",
+      "version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "license": "GPL-2.0-or-later; see source header",
+      "homepage": "https://github.com/skk-dev/dict",
+      "notices": [],
+      "encoding": "euc_jis_2004",
+      "sha256": "5c90675fbacfd4046a44ae807cb47b1acaafff61be65c5c3372dadee2790fc13",
+      "bytes": 2933,
+      "fetched_at": "2026-09-23T18:04:12.492335+00:00",
+      "last_modified": null,
+      "notice_files": []
+    },
+    {
+      "id": "sudachi-small",
+      "format": "sudachi",
+      "url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/small_lex.zip",
+      "version": "v20260723",
+      "license": "Apache-2.0 AND bundled upstream notices",
+      "homepage": "https://github.com/WorksApplications/SudachiDict",
+      "notices": [
+        "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LICENSE-2.0.txt",
+        "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LEGAL"
+      ],
+      "sha256": "b578ac9545899783d5d7e30d5d78d5d9dcf40b36965d4af0663ec2eb041c1093",
+      "bytes": 13641526,
+      "fetched_at": "2026-09-23T18:04:14.585096+00:00",
+      "last_modified": "Fri, 24 Jul 2026 08:14:48 GMT",
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LICENSE-2.0.txt",
+          "file": "notice-0.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LEGAL",
+          "file": "notice-1.txt",
+          "sha256": "725a8776b38e058b185e905594bc9a2437dbf3787df022fffeefedb9a84e4665"
+        }
+      ]
+    },
+    {
+      "id": "sudachi-core",
+      "format": "sudachi",
+      "url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/core_lex.zip",
+      "version": "v20260723",
+      "license": "Apache-2.0 AND bundled upstream notices",
+      "homepage": "https://github.com/WorksApplications/SudachiDict",
+      "notices": [
+        "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LICENSE-2.0.txt",
+        "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LEGAL"
+      ],
+      "sha256": "a2b39e1572adab08a649b1390b134517adc55f1d733c59358b113298788bf31c",
+      "bytes": 21648026,
+      "fetched_at": "2026-09-23T18:04:13.803098+00:00",
+      "last_modified": "Fri, 24 Jul 2026 08:14:52 GMT",
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LICENSE-2.0.txt",
+          "file": "notice-0.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LEGAL",
+          "file": "notice-1.txt",
+          "sha256": "725a8776b38e058b185e905594bc9a2437dbf3787df022fffeefedb9a84e4665"
+        }
+      ]
+    },
+    {
+      "id": "sudachi-notcore",
+      "format": "sudachi",
+      "url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/notcore_lex.zip",
+      "version": "v20260723",
+      "license": "Apache-2.0 AND bundled upstream notices",
+      "homepage": "https://github.com/WorksApplications/SudachiDict",
+      "notices": [
+        "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LICENSE-2.0.txt",
+        "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LEGAL"
+      ],
+      "sha256": "a15edc5193b42acfebdc220825d8c7edf0059bf950169d09bcdf6c426a81ecd1",
+      "bytes": 35669479,
+      "fetched_at": "2026-09-23T18:04:18.745193+00:00",
+      "last_modified": "Fri, 24 Jul 2026 08:14:59 GMT",
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LICENSE-2.0.txt",
+          "file": "notice-0.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/WorksApplications/SudachiDict/v20260723/LEGAL",
+          "file": "notice-1.txt",
+          "sha256": "725a8776b38e058b185e905594bc9a2437dbf3787df022fffeefedb9a84e4665"
+        }
+      ]
+    },
+    {
+      "id": "jawiki",
+      "format": "skk",
+      "url": "https://github.com/tokuhirom/jawiki-kana-kanji-dict/releases/download/v2026.09.21.185756/SKK-JISYO.jawiki",
+      "version": "v2026.09.21.185756",
+      "license": "MIT declared by upstream; Wikipedia extraction rationale in README",
+      "homepage": "https://github.com/tokuhirom/jawiki-kana-kanji-dict",
+      "notices": [
+        "https://raw.githubusercontent.com/tokuhirom/jawiki-kana-kanji-dict/v2026.09.21.185756/README.md"
+      ],
+      "encoding": "utf-8",
+      "sha256": "d8450a24fd58643217ca9d1725507a0d632ad133d3cb2a2dc9281cc08c16557a",
+      "bytes": 29095461,
+      "fetched_at": "2026-09-23T18:04:17.446173+00:00",
+      "last_modified": "Mon, 21 Sep 2026 18:58:06 GMT",
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/tokuhirom/jawiki-kana-kanji-dict/v2026.09.21.185756/README.md",
+          "file": "notice-0.txt",
+          "sha256": "60d78ac2130f4b5eac62342d97bfce9c9e4d6912cfb7e2e1591adbd70491ec8c"
+        }
+      ]
+    },
+    {
+      "id": "jmdict",
+      "format": "jmdict",
+      "url": "https://www.edrdg.org/pub/Nihongo/JMdict_e.gz",
+      "version": "2026-09-23 daily snapshot",
+      "license": "CC-BY-SA-4.0",
+      "homepage": "https://www.edrdg.org/",
+      "notices": [
+        "https://www.edrdg.org/edrdg/licence.html"
+      ],
+      "attribution": "JMdict/JMnedict: Copyright James William BREEN and the Electronic Dictionary Research and Development Group",
+      "sha256": "b78c0da0963e95c4e5c5de18f754027e1704bbfc611d4c47c971a379e5a10e2f",
+      "bytes": 10575907,
+      "fetched_at": "2026-09-23T18:04:16.808873+00:00",
+      "last_modified": "Wed, 23 Sep 2026 03:30:24 GMT",
+      "notice_files": [
+        {
+          "url": "https://www.edrdg.org/edrdg/licence.html",
+          "file": "notice-0.txt",
+          "sha256": "52f60ea9ca68170a2f0663d7dba381ebf1bd57c17a3347dfe21153865c156692"
+        }
+      ]
+    },
+    {
+      "id": "jmnedict",
+      "format": "jmdict",
+      "url": "https://www.edrdg.org/pub/Nihongo/JMnedict.xml.gz",
+      "version": "2026-09-23 daily snapshot",
+      "license": "CC-BY-SA-4.0",
+      "homepage": "https://www.edrdg.org/",
+      "notices": [
+        "https://www.edrdg.org/edrdg/licence.html"
+      ],
+      "attribution": "JMdict/JMnedict: Copyright James William BREEN and the Electronic Dictionary Research and Development Group",
+      "sha256": "50817747c1d5d4f5b83d9034c2a8910305a37ba77e756e1efd40e7a44728ad40",
+      "bytes": 12446954,
+      "fetched_at": "2026-09-23T18:04:26.010897+00:00",
+      "last_modified": "Wed, 23 Sep 2026 03:30:02 GMT",
+      "notice_files": [
+        {
+          "url": "https://www.edrdg.org/edrdg/licence.html",
+          "file": "notice-0.txt",
+          "sha256": "52f60ea9ca68170a2f0663d7dba381ebf1bd57c17a3347dfe21153865c156692"
+        }
+      ]
+    },
+    {
+      "id": "jmed",
+      "format": "jmed",
+      "url": "https://sociocom.naist.jp/download/jmed-dict-mini/?wpdmdl=6526&refresh=6ab41495389ab1790186645",
+      "version": "version recorded in ZIP member names",
+      "license": "CC-BY-4.0 (reading/surface only)",
+      "homepage": "https://sociocom.naist.jp/download/jmed-dict-mini/",
+      "notices": [
+        "https://sociocom.naist.jp/download/jmed-dict-mini/"
+      ],
+      "attribution": "NAIST Social Computing Lab., JMED-DICT working group",
+      "sha256": "2784c46993085e44eb31cefe1517b3bd3c3754022b9a7389032d6b60299cff7e",
+      "bytes": 19757273,
+      "fetched_at": "2026-09-23T18:04:22.285249+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://sociocom.naist.jp/download/jmed-dict-mini/",
+          "file": "notice-0.txt",
+          "sha256": "8c0f8a4d79d7af193cdaf8dbc48443404864ffddede89eda382ffd9c199f70e5"
+        }
+      ]
+    }
+  ]
+}

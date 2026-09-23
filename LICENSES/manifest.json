@@ -1,0 +1,336 @@
+{
+  "retrieved_at": "2026-09-23T18:29:54.794782+00:00",
+  "files": [
+    {
+      "file": "LICENSE",
+      "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
+      "resolved_url": "https://www.gnu.org/licenses/gpl-3.0.txt",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+      "bytes": 35149
+    },
+    {
+      "file": "LICENSES/GPL-2.0.txt",
+      "url": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt",
+      "resolved_url": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt",
+      "sha256": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6",
+      "bytes": 17984
+    },
+    {
+      "file": "LICENSES/Apache-2.0.txt",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "resolved_url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "file": "LICENSES/CC-BY-4.0.txt",
+      "url": "https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/3edadd4e29295ef7c74d84e9949af826122066a8/docs/licenses/by/4.0/legalcode.txt",
+      "resolved_url": "https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/3edadd4e29295ef7c74d84e9949af826122066a8/docs/licenses/by/4.0/legalcode.txt",
+      "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+      "bytes": 18657
+    },
+    {
+      "file": "LICENSES/CC-BY-SA-4.0.txt",
+      "url": "https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/3edadd4e29295ef7c74d84e9949af826122066a8/docs/licenses/by-sa/4.0/legalcode.txt",
+      "resolved_url": "https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/3edadd4e29295ef7c74d84e9949af826122066a8/docs/licenses/by-sa/4.0/legalcode.txt",
+      "sha256": "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5",
+      "bytes": 20138
+    },
+    {
+      "file": "third_party/licenses/aho-corasick/COPYING",
+      "package": "aho-corasick",
+      "version": "1.1.5",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+      "bytes": 126
+    },
+    {
+      "file": "third_party/licenses/aho-corasick/UNLICENSE",
+      "package": "aho-corasick",
+      "version": "1.1.5",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+      "bytes": 1211
+    },
+    {
+      "file": "third_party/licenses/aho-corasick/LICENSE-MIT",
+      "package": "aho-corasick",
+      "version": "1.1.5",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+      "bytes": 1081
+    },
+    {
+      "file": "third_party/licenses/byteorder/COPYING",
+      "package": "byteorder",
+      "version": "1.5.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+      "bytes": 126
+    },
+    {
+      "file": "third_party/licenses/byteorder/UNLICENSE",
+      "package": "byteorder",
+      "version": "1.5.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+      "bytes": 1211
+    },
+    {
+      "file": "third_party/licenses/byteorder/LICENSE-MIT",
+      "package": "byteorder",
+      "version": "1.5.0",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+      "bytes": 1081
+    },
+    {
+      "file": "third_party/licenses/memchr/COPYING",
+      "package": "memchr",
+      "version": "2.8.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+      "bytes": 126
+    },
+    {
+      "file": "third_party/licenses/memchr/UNLICENSE",
+      "package": "memchr",
+      "version": "2.8.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+      "bytes": 1211
+    },
+    {
+      "file": "third_party/licenses/memchr/LICENSE-MIT",
+      "package": "memchr",
+      "version": "2.8.3",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+      "bytes": 1081
+    },
+    {
+      "file": "third_party/licenses/regex/LICENSE-APACHE",
+      "package": "regex",
+      "version": "1.13.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "bytes": 10847
+    },
+    {
+      "file": "third_party/licenses/regex/LICENSE-MIT",
+      "package": "regex",
+      "version": "1.13.1",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+      "bytes": 1071
+    },
+    {
+      "file": "third_party/licenses/regex-automata/LICENSE-APACHE",
+      "package": "regex-automata",
+      "version": "0.4.18",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "bytes": 10847
+    },
+    {
+      "file": "third_party/licenses/regex-automata/LICENSE-MIT",
+      "package": "regex-automata",
+      "version": "0.4.18",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+      "bytes": 1071
+    },
+    {
+      "file": "third_party/licenses/regex-syntax/LICENSE-APACHE",
+      "package": "regex-syntax",
+      "version": "0.8.11",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "bytes": 10847
+    },
+    {
+      "file": "third_party/licenses/regex-syntax/LICENSE-MIT",
+      "package": "regex-syntax",
+      "version": "0.8.11",
+      "source": "registry+https://github.com/rust-lang/crates.io-index",
+      "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+      "bytes": 1071
+    },
+    {
+      "file": "third_party/licenses/rustmigemo/LICENSE",
+      "package": "rustmigemo",
+      "version": "0.1.7-dev.0",
+      "source": "git+https://github.com/oguna/rustmigemo.git?rev=121101dfcfd9465c998ba53fabe43773b14bf868#121101dfcfd9465c998ba53fabe43773b14bf868",
+      "sha256": "816fad7c2e0a2956d0a3976ec38f70d6a93ffe98735bcc4b6ce86cd28f1da63a",
+      "bytes": 1048
+    },
+    {
+      "file": "third_party/licenses/rustmigemo/THIRDPARTY_LICENSES.txt",
+      "package": "rustmigemo",
+      "version": "0.1.7-dev.0",
+      "source": "git+https://github.com/oguna/rustmigemo.git?rev=121101dfcfd9465c998ba53fabe43773b14bf868#121101dfcfd9465c998ba53fabe43773b14bf868",
+      "sha256": "b32feed06bec97e19310cc00311bd5bc22f9f28b69eb245398f2457abe844f2f",
+      "bytes": 1780
+    },
+    {
+      "file": "third_party/licenses/jmnedict/notice-0.txt",
+      "source_id": "jmnedict",
+      "source_version": "2026-09-23 daily snapshot",
+      "source_url": "https://www.edrdg.org/pub/Nihongo/JMnedict.xml.gz",
+      "sha256": "52f60ea9ca68170a2f0663d7dba381ebf1bd57c17a3347dfe21153865c156692",
+      "bytes": 13587
+    },
+    {
+      "file": "third_party/licenses/jmdict/notice-0.txt",
+      "source_id": "jmdict",
+      "source_version": "2026-09-23 daily snapshot",
+      "source_url": "https://www.edrdg.org/pub/Nihongo/JMdict_e.gz",
+      "sha256": "52f60ea9ca68170a2f0663d7dba381ebf1bd57c17a3347dfe21153865c156692",
+      "bytes": 13587
+    },
+    {
+      "file": "third_party/licenses/sudachi-core/notice-0.txt",
+      "source_id": "sudachi-core",
+      "source_version": "v20260723",
+      "source_url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/core_lex.zip",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "file": "third_party/licenses/sudachi-core/notice-1.txt",
+      "source_id": "sudachi-core",
+      "source_version": "v20260723",
+      "source_url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/core_lex.zip",
+      "sha256": "725a8776b38e058b185e905594bc9a2437dbf3787df022fffeefedb9a84e4665",
+      "bytes": 6037
+    },
+    {
+      "file": "third_party/licenses/skk-jis2004/source-header.txt",
+      "source_id": "skk-jis2004",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.JIS2004",
+      "sha256": "427e577ded76b3c61a0aa6f460ece45a79f7d182b39563e468a777b02f05137f",
+      "bytes": 2367
+    },
+    {
+      "file": "third_party/licenses/skk-l/source-header.txt",
+      "source_id": "skk-l",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.L",
+      "sha256": "cfd2781cd90d5b0c785ecc92c615eebd76d7c9143d60b8156a4836921011a04b",
+      "bytes": 2391
+    },
+    {
+      "file": "third_party/licenses/skk-law/source-header.txt",
+      "source_id": "skk-law",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.law",
+      "sha256": "566a82a860a3989cbb3793dda34b18d80c2a7187d3c3b8eb0c09dd76faaa69b3",
+      "bytes": 1870
+    },
+    {
+      "file": "third_party/licenses/jawiki/notice-0.txt",
+      "source_id": "jawiki",
+      "source_version": "v2026.09.21.185756",
+      "source_url": "https://github.com/tokuhirom/jawiki-kana-kanji-dict/releases/download/v2026.09.21.185756/SKK-JISYO.jawiki",
+      "sha256": "60d78ac2130f4b5eac62342d97bfce9c9e4d6912cfb7e2e1591adbd70491ec8c",
+      "bytes": 4009
+    },
+    {
+      "file": "third_party/licenses/jawiki/source-header.txt",
+      "source_id": "jawiki",
+      "source_version": "v2026.09.21.185756",
+      "source_url": "https://github.com/tokuhirom/jawiki-kana-kanji-dict/releases/download/v2026.09.21.185756/SKK-JISYO.jawiki",
+      "sha256": "0d31b58dcba9724095c26b33a6bffe48ea629a71ffe7e42d78c495b5aac69b59",
+      "bytes": 134
+    },
+    {
+      "file": "third_party/licenses/skk-hukugougo/source-header.txt",
+      "source_id": "skk-hukugougo",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.hukugougo",
+      "sha256": "31df18a702319bc1318d70a657f64f99ad81ec23f721db03c05a27dfce47cb89",
+      "bytes": 2717
+    },
+    {
+      "file": "third_party/licenses/sudachi-notcore/notice-0.txt",
+      "source_id": "sudachi-notcore",
+      "source_version": "v20260723",
+      "source_url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/notcore_lex.zip",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "file": "third_party/licenses/sudachi-notcore/notice-1.txt",
+      "source_id": "sudachi-notcore",
+      "source_version": "v20260723",
+      "source_url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/notcore_lex.zip",
+      "sha256": "725a8776b38e058b185e905594bc9a2437dbf3787df022fffeefedb9a84e4665",
+      "bytes": 6037
+    },
+    {
+      "file": "third_party/licenses/skk-geo/source-header.txt",
+      "source_id": "skk-geo",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.geo",
+      "sha256": "42de70b793bd8682e6840caf8190b357c877572e30244b7ce034cee1d8eb2944",
+      "bytes": 2334
+    },
+    {
+      "file": "third_party/licenses/skk-jinmei/source-header.txt",
+      "source_id": "skk-jinmei",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.jinmei",
+      "sha256": "0d8c061f3b300c363afcc921191a575a151f32c54ee3b8c6686c14d6448ab5a1",
+      "bytes": 1642
+    },
+    {
+      "file": "third_party/licenses/skk-station/source-header.txt",
+      "source_id": "skk-station",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.station",
+      "sha256": "11b82a2de374b6a5826d5cff959a8903222fe42db0c9c7626d0e317f4c0ec408",
+      "bytes": 3091
+    },
+    {
+      "file": "third_party/licenses/jmed/notice-0.txt",
+      "source_id": "jmed",
+      "source_version": "version recorded in ZIP member names",
+      "source_url": "https://sociocom.naist.jp/download/jmed-dict-mini/?wpdmdl=6526&refresh=6ab41495389ab1790186645",
+      "sha256": "8c0f8a4d79d7af193cdaf8dbc48443404864ffddede89eda382ffd9c199f70e5",
+      "bytes": 81291
+    },
+    {
+      "file": "third_party/licenses/jmed/README.pdf",
+      "source_id": "jmed",
+      "source_version": "version recorded in ZIP member names",
+      "source_url": "https://sociocom.naist.jp/download/jmed-dict-mini/?wpdmdl=6526&refresh=6ab41495389ab1790186645",
+      "sha256": "97b8abfcb830cd4858fb7e8a778ebb968b1a1551cf0258d06fe0caff7d77fbc3",
+      "bytes": 718617
+    },
+    {
+      "file": "third_party/licenses/skk-propernoun/source-header.txt",
+      "source_id": "skk-propernoun",
+      "source_version": "0a164e6b990c5eb5b59eb7d8789f08865dc2f644",
+      "source_url": "https://raw.githubusercontent.com/skk-dev/dict/0a164e6b990c5eb5b59eb7d8789f08865dc2f644/SKK-JISYO.propernoun",
+      "sha256": "593540470e2f866174b2a78630d7abeb5ba6e565010d2586eec23fc285559a47",
+      "bytes": 7239
+    },
+    {
+      "file": "third_party/licenses/sudachi-small/notice-0.txt",
+      "source_id": "sudachi-small",
+      "source_version": "v20260723",
+      "source_url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/small_lex.zip",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "file": "third_party/licenses/sudachi-small/notice-1.txt",
+      "source_id": "sudachi-small",
+      "source_version": "v20260723",
+      "source_url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/small_lex.zip",
+      "sha256": "725a8776b38e058b185e905594bc9a2437dbf3787df022fffeefedb9a84e4665",
+      "bytes": 6037
+    }
+  ]
+}
