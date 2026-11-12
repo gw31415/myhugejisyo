@@ -810,10 +810,11 @@ def transliteration(key, surface, rows):
         source == 'jmdict' or source == 'mozc' and plausible_mozc(surface, cost) for source, _, cost, *_ in rows)
 
 
-def candidate_rows(rows, mozc=None, clicks=None):
+def candidate_rows(rows, mozc=None, clicks=None, key=None, elsewhere=None):
     """{surface: [(source, rank, cost, pri, irregular)]} from rows (surface, source, rank, cost, pri[, original_reading[, inf]]);
     mozc: {surface: cost} of the key, attached as ('mozc', 0, cost, None, False) to existing candidates only; clicks: {title:
-    clicks}, attached as ('clickstream', 0, clicks, None, False) to existing candidates whose surface is a title."""
+    clicks}, attached as ('clickstream', 0, clicks, None, False) to existing candidates whose surface is a title, unless
+    elsewhere ({title: its only signal reading, or None for several}) shows a signal under a reading other than key."""
     rows = list(rows)
     by_surface = {row[0]: [] for row in rows}
     for surface, source, rank, cost, pri, *extra in rows:
@@ -829,14 +830,14 @@ def candidate_rows(rows, mozc=None, clicks=None):
             values.append(('mozc', 0, mozc.get(surface), None, False))
     if clicks:
         for surface, values in by_surface.items():
-            if surface in clicks:
+            if surface in clicks and (not elsewhere or elsewhere.get(surface, key) == key):
                 values.append(('clickstream', 0, clicks[surface], None, False))
     return by_surface
 
 
-def nasi_candidates(key, rows, skk_sources=(), mozc=None, clicks=None):
-    """Candidates of one okuri-nasi key in output order; rows, mozc and clicks as for candidate_rows."""
-    by_surface = candidate_rows(rows, mozc, clicks)
+def nasi_candidates(key, rows, skk_sources=(), mozc=None, clicks=None, elsewhere=None):
+    """Candidates of one okuri-nasi key in output order; rows, mozc, clicks and elsewhere as for candidate_rows."""
+    by_surface = candidate_rows(rows, mozc, clicks, key, elsewhere)
     return sorted(by_surface, key=lambda s: candidate_order(key, s, by_surface[s], skk_sources))
 
 
@@ -880,11 +881,28 @@ def ranking_ids(sources, selected, format='mozc'):
 
 
 def click_counts(con, sources, selected):
-    """{article title: clicks} summed over the selected Clickstream sources, held in memory; None when none is selected."""
+    """({article title: clicks} summed over the selected Clickstream sources, {title: its only signal reading, None for several}),
+    both held in memory; (None, None) when no Clickstream is selected. Signal readings are those where the selected sources give
+    the title's surface a plausible Mozc cost, a sudachi-small cost, JMdict priority tags or an skk-l candidate: the article's
+    clicks then most likely belong to that word (月 is read つき, not ひかる), so other keys ignore them. With this guard the
+    hold-out vs SKK-JISYO.L is 0.6827 adjacent / 0.7300 first-two (without Clickstream 0.6827 / 0.7300, unguarded 0.6825 / 0.7297)."""
     ids = ranking_ids(sources, selected, 'clickstream')
     if not ids:
-        return None
-    return dict(con.execute('SELECT surface,sum(clicks) FROM clicks WHERE source IN (' + ','.join('?' * len(ids)) + ') GROUP BY surface', ids))
+        return None, None
+    marks = lambda values: ','.join('?' * len(values))
+    counts = dict(con.execute(f'SELECT surface,sum(clicks) FROM clicks WHERE source IN ({marks(ids)}) GROUP BY surface', ids))
+    query = (f"SELECT reading,surface FROM entries WHERE source IN ({marks(selected)}) AND kind='nasi' AND scope IN ('all','skk') "
+             "AND (source='skk-l' OR source='sudachi-small' AND cost!=0 OR source='jmdict' AND pri IS NOT NULL)")
+    mozc = ranking_ids(sources, selected)
+    if mozc:
+        con.create_function('plausible_mozc', 2, plausible_mozc, deterministic=True)
+        query += (f' UNION SELECT reading,surface FROM costs WHERE source IN ({marks(mozc)}) GROUP BY reading,surface'
+                  ' HAVING plausible_mozc(surface,min(cost))')
+    elsewhere = {}
+    for reading, surface in con.execute(query, [*selected, *mozc]):
+        if surface in counts:
+            elsewhere[surface] = reading if elsewhere.get(surface, reading) == reading else None
+    return counts, elsewhere
 
 
 def join_costs(groups, costs):
@@ -929,16 +947,17 @@ def export_skk_tsv(ids, output):
              + " AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
     groups = itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
     # A second cursor streams Mozc costs alongside; candidates still come only from entries.
-    clicks = click_counts(con, sources, selected)
+    clicks, elsewhere = click_counts(con, sources, selected)
     nasi = (('nasi', key, surface) for key, rows, mozc in join_costs(groups, ranking_costs(con, sources, selected))
-            for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources, mozc, clicks))
+            for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources, mozc, clicks, elsewhere))
     records = itertools.chain((('ari', key, surface) for key in sorted(ari, reverse=True) for surface in ari[key]), nasi)
     try:
         return write_export(output, records, sources, selected,
                             'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with upstream SKK candidates by source then source order, '
                             'then rule-generated ones (Sudachi inflected forms / JMdict conjugation tables split into stem+okuri letter) by the estimated cost of their dictionary form; '
                             'okuri-nasi keys ascending with skk-l candidates first in SKK-JISYO.L order, then by estimated cost (Mozc OSS cost when selected and present, '
-                            'else sudachi-small cost/JMdict priority, else the Wikipedia Clickstream clicks of an article titled like the candidate when selected and before the source default, '
+                            'else sudachi-small cost/JMdict priority, else the Wikipedia Clickstream clicks of an article titled like the candidate when selected, before the source default '
+                            'and no such signal or skk-l candidate gives that surface another reading, '
                             'else source defaults; JMdict irregular/rare/outdated-only forms after source defaults; JMdict search-only forms excluded); '
                             'Mozc and Clickstream rank only and add no candidates; normalization as the RustMigemo TSV', dict(okuri_ari=dict(sorted(origin.items()))))
     finally:
@@ -1011,7 +1030,8 @@ def export_skk(tsv, output, release_headers=()):
                                     'Mozc OSS word cost (ranking-only source, quantile-mapped) when selected and present, otherwise sudachi-small cost '
                                     'or JMdict priority tags (+ a shift when missing from a selected Mozc); without those, the monthly Wikipedia Clickstream clicks '
                                     '(ranking-only source, CC0) of the article titled exactly like the candidate, quantile-mapped and shifted like the other '
-                                    'signals, when that comes before the per-source default; then per-source defaults; JMdict forms tagged only '
+                                    'signals, when that comes before the per-source default and the surface has no such signal or skk-l candidate under '
+                                    'another reading; then per-source defaults; JMdict forms tagged only '
                                     'irregular/rare/outdated after the defaults; katakana spellings of the key without JMdict/Mozc evidence after other words, '
                                     'ASCII after those, kana-identical candidates last); not measured usage frequency; use after personal/base SKK dictionaries',
                     exclusions='unrepresentable plain SKK keys/candidates omitted; no Lisp expressions emitted; JMdict search-only forms (sK/sk) omitted')

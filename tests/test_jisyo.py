@@ -563,6 +563,9 @@ def clickstream_gz(rows):
     return gzip.compress(''.join('\t'.join(map(str, row)) + '\n' for row in rows).encode())
 
 
+from contextlib import closing
+
+
 class ClickstreamTests(unittest.TestCase):
     ROWS = [('other-search', '田中_(曖昧さ回避)', 'external', 50), ('other-search', '多那珂', 'external', 900),
             ('他中', '多那珂', 'link', 100), ('other-empty', '田仲', 'external', 30), ('多那珂', '田仲', 'other', 12),
@@ -589,9 +592,13 @@ class ClickstreamTests(unittest.TestCase):
                                      [('Foo Bar', 10), ('多那珂', 1000), ('田中', 5000), ('田中 (曖昧さ回避)', 50), ('田仲', 42)])
                     self.assertEqual(db.execute("SELECT COUNT(*) FROM entries WHERE source='clickstream'").fetchone()[0], 0)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM costs').fetchone()[0], 0)
-                    clicks = jisyo.click_counts(db, [dict(id='clickstream', format='clickstream')], ['clickstream'])
+                    meta = [dict(id='skk-l', format='skk'), dict(id='clickstream', format='clickstream')]
+                    clicks, elsewhere = jisyo.click_counts(db, meta, ['clickstream', 'skk-l'])
                     self.assertEqual(clicks['田仲'], 42)
-                    self.assertIsNone(jisyo.click_counts(db, [dict(id='clickstream', format='clickstream')], ['skk-l']))
+                    # skk-l lists 田中 under たなか: other keys ignore its clicks.
+                    self.assertEqual(elsewhere, {'田中': 'たなか'})
+                    self.assertEqual(jisyo.click_counts(db, meta, ['clickstream'])[1], {})
+                    self.assertEqual(jisyo.click_counts(db, meta, ['skk-l']), (None, None))
                 report = json.loads((root/'data/import-report.json').read_text())
                 self.assertEqual(report['clickstream'], {'parsed_pairs': 7, 'unique_source_pairs': 5})
                 self.assertEqual(report['totals']['ranking_titles'], 5)
@@ -671,6 +678,50 @@ class ClickstreamTests(unittest.TestCase):
         self.assertEqual(jisyo.click_cost(10 ** 9), knots[-1][1])
         self.assertGreater(jisyo.click_cost(knots[3][0]), jisyo.click_cost(knots[3][0] + 1))
         self.assertLess(knots[0][1], min(jisyo.DEFAULT_COST.values()))
+
+    def test_titles_with_a_signal_under_another_reading_are_ignored(self):
+        E = jisyo.Entry
+        parsed = {'skk-l': [E('ひかる', '光', ''), E('みなと', '港', ''), E('すい', '水', '')],
+                  'skk-jinmei': [E('ひかる', '月', ''), E('ひかる', '晄', ''), E('みなと', '水', ''), E('みなと', '皆斗', ''),
+                                 E('まひめ', '愛姫', ''), E('まひめ', '真媛', ''), E('めごひめ', '愛姫', '')],
+                  'sudachi-small': [E('つき', '月', '', cost=5000), E('げつ', '月', '', cost=9000)],
+                  'jmdict': [E('みず', '水', '', pri='ichi1')]}
+        mozc = 'めごひめ\t1\t1\t9000\t愛姫\nこう\t1\t1\t500\tコウ\n'
+        rows = [('other-search', t, 'external', n) for t, n in [('月', 10 ** 6), ('晄', 20), ('水', 10 ** 6), ('皆斗', 30), ('愛姫', 9000), ('真媛', 15)]]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            real = jisyo.rows
+            def fake_rows(source, stats):
+                return real(source, stats) if source['id'] in ('clickstream', 'mozc-00') else iter(parsed[source['id']])
+            with patch.multiple(jisyo, DB=root/'db.sqlite', CACHE=root/'raw', ROOT=root, rows=fake_rows):
+                self.build(root, [(id, 'skk' if id.startswith('skk') else 'x', '') for id in parsed]
+                           + [('mozc-00', 'mozc', mozc), ('clickstream', 'clickstream', clickstream_gz(rows))])
+                with closing(sqlite3.connect(root/'db.sqlite')) as db:
+                    meta = [json.loads(m) for m, in db.execute('SELECT metadata FROM sources')]
+                    # 月: two Sudachi readings; 水: skk-l すい and JMdict みず; 愛姫: plausible Mozc めごひめ only.
+                    self.assertEqual(jisyo.click_counts(db, meta, sorted(m['id'] for m in meta))[1],
+                                     {'月': None, '水': None, '愛姫': 'めごひめ'})
+                    self.assertEqual(jisyo.click_counts(db, meta, ['clickstream', 'skk-jinmei'])[1], {})
+                with patch.object(jisyo, 'write_export', lambda output, records, *_: list(records)):
+                    def nasi(ids):
+                        result = {}
+                        for kind, key, surface in jisyo.export_skk_tsv(ids, root/'x'):
+                            result.setdefault(key, []).append(surface)
+                        return result
+                    guarded, plain = nasi(None), nasi(['skk-jinmei', 'clickstream'])
+                    # Clicks of 月/水/愛姫 belong to つき/みず/めごひめ: untitled-looking order under ひかる/みなと/まひめ,
+                    # while titles without another reading (晄, 皆斗, 真媛) still move ahead.
+                    self.assertEqual(guarded['ひかる'], ['光', '晄', '月'])
+                    self.assertEqual(guarded['みなと'], ['港', '皆斗', '水'])
+                    self.assertEqual(guarded['まひめ'], ['真媛', '愛姫'])
+                    self.assertEqual(plain['ひかる'], ['月', '晄'])
+                    self.assertEqual(plain['まひめ'], ['愛姫', '真媛'])
+        # The key's own signal reading does not block (its clicks are then unused anyway); several readings always block.
+        rows = [('月', 'skk-jinmei', 1, None, None), ('晄', 'skk-jinmei', 2, None, None)]
+        self.assertEqual(jisyo.nasi_candidates('ひかる', rows, {'skk-jinmei'}, None, {'月': 10 ** 6}, {'月': 'ひかる'})[0], '月')
+        self.assertEqual(jisyo.nasi_candidates('ひかる', rows, {'skk-jinmei'}, None, {'月': 10 ** 6}, {'月': None})[0], '月')
+        self.assertEqual(jisyo.nasi_candidates('ひかる', rows, {'skk-jinmei'}, None, {'月': 10 ** 6, '晄': 20}, {'月': None}), ['晄', '月'])
+        self.assertEqual(jisyo.nasi_candidates('ひかる', rows, {'skk-jinmei'}, None, {'月': 10 ** 6, '晄': 20}, {'月': 'つき'}), ['晄', '月'])
 
     def test_update_selects_newest_month_with_jawiki_file(self):
         index = ''.join(f'<a href="{m}/">{m}/</a>\n' for m in ['2026-08', '2026-10', '2026-09']) + '<a href="readme.html">readme.html</a>'

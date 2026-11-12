@@ -21,8 +21,8 @@ SudachiDictの動詞・形容詞の活用形の行とJMdictの動詞・形容詞
 RustMigemo compact、UTF-8 SKKへ出力しました。SKKでは安全に表せないキー・候補をさらに
 除外し、送りありは見出し降順で、SKK辞書由来の候補を出典順に並べた後に生成候補を推定順に、
 送りなしは見出し昇順で、候補はSKK-JISYO.Lの順を先頭に、残りを辞書内の信号（Mozc OSSのコスト・
-Sudachiコスト・JMdict優先度。これらのない候補は同じ表記のWikipedia記事のClickstreamクリック数か
-出典別既定値、JMdictの不規則・まれ・旧表記は後方）から推定した順に並べ替えました。Mozc OSS辞書と
+Sudachiコスト・JMdict優先度。これらのない候補は同じ表記のWikipedia記事のClickstreamクリック数（別の読みで
+これらの信号を持つかSKK-JISYO.Lにある表記を除く）か出典別既定値、JMdictの不規則・まれ・旧表記は後方）から推定した順に並べ替えました。Mozc OSS辞書と
 Wikipedia Clickstreamは候補順の決定だけに使い、語彙は追加していません。
 JMEDは出現形・出現形よみだけを抽出し、外部医療コードを除外しました。
 同梱した原資料と上流告知は変更していません（JMED入力のみ語彙TSVへ置換）。

@@ -37,7 +37,7 @@ def skk_l_order(path, encoding):
 
 
 def db_keys(db, sources):
-    """Yield (key, rows, selected SKK source IDs, Mozc costs, Clickstream clicks) in key order from the SQLite master."""
+    """Yield (key, rows, selected SKK source IDs, Mozc costs, Clickstream clicks, their other readings) in key order."""
     con = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
     metadata = [json.loads(row[0]) for row in con.execute('SELECT metadata FROM sources')]
     meta = {s['id']: s['format'] for s in metadata}
@@ -45,11 +45,11 @@ def db_keys(db, sources):
     skk_sources = {i for i in selected if meta[i] == 'skk'}
     query = ('SELECT reading,surface,source,rank,cost,pri,original_reading,inf FROM entries WHERE source IN (' + ','.join('?' * len(selected))
              + ") AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
-    clicks = jisyo.click_counts(con, metadata, selected)
+    clicks, elsewhere = jisyo.click_counts(con, metadata, selected)
     groups = itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
     try:
         for key, rows, mozc in jisyo.join_costs(groups, jisyo.ranking_costs(con, metadata, selected)):
-            yield key, [row[1:] for row in rows], skk_sources, mozc, clicks
+            yield key, [row[1:] for row in rows], skk_sources, mozc, clicks, elsewhere
     finally:
         con.close()
 
@@ -101,13 +101,14 @@ def main():
 
     if args.db:
         stats = Counter()
-        for key, rows, skk_sources, mozc, clicks in db_keys(args.db, args.sources):
+        for key, rows, skk_sources, mozc, clicks, elsewhere in db_keys(args.db, args.sources):
             if not args.skk:
-                count_first(key, jisyo.nasi_candidates(key, rows, skk_sources, mozc, clicks))
+                count_first(key, jisyo.nasi_candidates(key, rows, skk_sources, mozc, clicks, elsewhere))
             if key not in truth and key not in PROBES:
                 continue
             # Ignore rule 1: pseudo-cost from every selected source except skk-l itself.
-            held = jisyo.candidate_rows((row for row in rows if row[1] != 'skk-l'), mozc, clicks)
+            # skk-l still marks other readings of a title (elsewhere); this key's skk-l rows are ignored.
+            held = jisyo.candidate_rows((row for row in rows if row[1] != 'skk-l'), mozc, clicks, key, elsewhere)
             if key in PROBES:
                 held_probes[key] = sorted(held, key=lambda s: jisyo.candidate_order(key, s, held[s], skk_sources))[:8]
             if key not in truth:
