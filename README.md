@@ -71,12 +71,13 @@ python3 jisyo.py export --sources jawiki --output dist/jawiki.tsv
 ## 保存先
 
 - `data/raw/<source>/`：取得した元データ、告知、取得記録
-- `data/lexicon.sqlite3`：検索用読み・元の読み・表記・出典・品詞・読みの由来を保存する共通マスタ
+- `data/lexicon.sqlite3`：検索用読み・元の読み・表記・出典・品詞・読みの由来を保存する共通マスタ。SKKの送りなし/送りあり（`kind`）、両形式・SKKのみ・RustMigemoのみの区別（`scope`）、出典内の出現順（`rank`）、Sudachiのコスト（`cost`）、JMdictの優先度タグ（`pri`）も保持
 - `data/import-report.json`：出典ごとの取り込み数、重複排除後の組数、除外理由・件数、全体のユニーク数
 - `dist/migemo-compact-dict.tsv`：UTF-8の「読み TAB 表記」。同じ組を重複排除し、安定ソート
 - `dist/migemo-compact-dict`：検索エンジンに渡すバイナリ
 - `dist/migemo-compact-dict.manifest.json`：生成物ハッシュ・出典・全件読み戻し検証結果
 - `dist/migemo-compact-dict.tsv.notices/`：出典の告知。JMEDのREADME.pdfも保存
+- `dist/SKK-JISYO.myhugejisyo.utf8.skk.tsv`：SKK出力の編集用中間ファイル。UTF-8の「種別（`ari`/`nasi`） TAB 見出し TAB 候補」で、SKK出力と同じ行順・候補順
 
 元データ・SQLite・生成物はGit管理外です。`sources.lock.json` と `Cargo.lock` は再現用に管理します。大規模ビルドには数GBの空きメモリとディスク容量を用意してください。上流RustMigemo builderは全語彙をメモリに保持します。
 
@@ -139,7 +140,7 @@ python3 jisyo.py skk
 python3 jisyo.py skk --sources jmed --output dist/SKK-JISYO.medical.utf8
 ```
 
-SKK出力は**送り仮名なしの補完辞書**です。UTF-8、見出し順ソート、同じ読みの候補を一行に統合します。現在の共通マスタはSKKの送り仮名あり項目を除外しているため、それらの復元はしません。個人辞書・公式Lの後ろに追加してください。候補順は辞書順であり、入力頻度順ではありません。
+SKK出力は**送り仮名なしの補完辞書**です。UTF-8、見出し順ソート、同じ読みの候補を一行に統合します。共通マスタから、出力と同じ順の中間ファイル `<output>.skk.tsv` を作ってからSKK形式へ変換します。現在の共通マスタはSKKの送り仮名あり項目を除外しているため、それらの復元はしません。個人辞書・公式Lの後ろに追加してください。候補順は辞書順であり、入力頻度順ではありません。
 
 SKKで構文になる `/ ; # [ ]` を含む候補、`(` で始まる候補、空白や特殊文字を含むキー、送り仮名キーと誤解される見出しは除外し、件数を `.manifest.json` に記録します。`pairs` は元TSVの組数、実際のSKK候補数は `skk.pairs` です。任意の文字列をLisp式へ変換して出力することはありません。このためSKK出力の候補数はRustMigemo出力と一致しない場合があります。
 
@@ -154,7 +155,7 @@ SKKで構文になる `/ ; # [ ]` を含む候補、`(` で始まる候補、空
 | edrdg | JMdict＋JMnedict | `migemo-compact-dict-edrdg` | `SKK-JISYO.myhugejisyo-edrdg.utf8` |
 | medical | JMED-DICT mini | `migemo-compact-dict-medical` | `SKK-JISYO.myhugejisyo-medical.utf8` |
 
-各profileの `*-dictionaries.tar.gz` には、両辞書・編集可能なTSV・出典manifest・今回取得した出典の告知・ライセンス本文を含めます。`dictionary-sources.tar.gz` には固定版の元データ、生成スクリプト、ロックファイルを含めます。ただしJMEDは外部医療コードを再配布しないよう、採用した読み・表記だけのTSVへ置換しています。アーカイブ内のロックはそのTSVのハッシュを持ち、原本のハッシュも `materialized_from` に記録します。これでオフライン取り込みと同一語彙の再生成が可能です。バイナリ単独URLから取得する場合も対応するbundleの告知・利用条件を確認してください。各配布版に `CHANGES.md`・`THIRD_PARTY_NOTICES.md`・`UPSTREAM_NOTICES/`・`RELEASE.json`・`SOURCES.md` を生成します。対応ソースにはさらに編集用TSV、単語ごとの出典・原読み、Rust依存ソース（vendor）、`BUILD.md` とオフライン再生成スクリプトを含めます。ソースへの案内は同じReleaseタグに固定されます。実際のアーカイブ全ファイルとライセンス参照を検証し、対応ソースから全profileをオフライン再生成して元の辞書とハッシュが一致した場合だけ公開工程へ進みます。
+各profileの `*-dictionaries.tar.gz` には、両辞書・編集可能なTSV・出典manifest・今回取得した出典の告知・ライセンス本文を含めます。`dictionary-sources.tar.gz` には固定版の元データ、生成スクリプト、ロックファイルを含めます。ただしJMEDは外部医療コードを再配布しないよう、採用した読み・表記だけのTSVへ置換しています。アーカイブ内のロックはそのTSVのハッシュを持ち、原本のハッシュも `materialized_from` に記録します。これでオフライン取り込みと同一語彙の再生成が可能です。バイナリ単独URLから取得する場合も対応するbundleの告知・利用条件を確認してください。各配布版に `CHANGES.md`・`THIRD_PARTY_NOTICES.md`・`UPSTREAM_NOTICES/`・`RELEASE.json`・`SOURCES.md` を生成します。対応ソースにはさらに編集用TSV（RustMigemo用 `editable/<profile>.tsv` とSKK用 `editable/<profile>.skk.tsv`）、単語ごとの出典・原読み、Rust依存ソース（vendor）、`BUILD.md` とオフライン再生成スクリプトを含めます。ソースへの案内は同じReleaseタグに固定されます。実際のアーカイブ全ファイルとライセンス参照を検証し、対応ソースから全profileをオフライン再生成して元の辞書とハッシュが一致した場合だけ公開工程へ進みます。
 
 ローカルで配布物を準備するには（ネットワーク公開は行いません）：
 

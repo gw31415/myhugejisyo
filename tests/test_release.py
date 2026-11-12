@@ -69,8 +69,8 @@ class ReleaseTests(unittest.TestCase):
     def test_skk_reproducible_release_headers(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            tsv = root/'all.tsv'
-            tsv.write_text('あ\t亜\n')
+            tsv = root/'all.skk.tsv'
+            tsv.write_text('nasi\tあ\t亜\n')
             Path(str(tsv)+'.manifest.json').write_text('{}')
             info = dict(modifier='maintainers', generated_at='2026-09-24T00:00:00Z', tag='test-1',
                         corresponding_source_url='https://example.com/test-1/dictionary-sources.tar.gz')

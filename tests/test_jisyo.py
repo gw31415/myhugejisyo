@@ -36,20 +36,22 @@ class ConversionTests(unittest.TestCase):
 あんぜん /安全/
 '''
         stats = Counter()
-        self.assertEqual(list(jisyo.parse_skk(io.StringIO(source), stats)),
+        self.assertEqual([e[:3] for e in jisyo.parse_skk(io.StringIO(source), stats)],
                          [('けんさく', '検索', ''), ('けんさく', '研削', ''), ('あんぜん', '安全', '')])
         self.assertEqual(stats['skk_okuri_entry'], 1)
         self.assertEqual(stats['skk_expression_entry'], 1)
 
     def test_jmdict_restrictions_no_kanji_and_kana(self):
         xml = b'''<!DOCTYPE JMdict [<!ENTITY n "noun">]><JMdict><entry>
-        <k_ele><keb>A</keb></k_ele><k_ele><keb>B</keb></k_ele>
-        <r_ele><reb>a</reb><re_restr>A</re_restr></r_ele>
+        <k_ele><keb>A</keb><ke_pri>news1</ke_pri><ke_pri>ichi1</ke_pri></k_ele><k_ele><keb>B</keb></k_ele>
+        <r_ele><reb>a</reb><re_restr>A</re_restr><re_pri>spec1</re_pri></r_ele>
         <r_ele><reb>b</reb><re_nokanji/></r_ele>
         <r_ele><reb>c</reb></r_ele><sense><pos>&n;</pos></sense>
         </entry><entry><r_ele><reb>d</reb></r_ele></entry></JMdict>'''
-        self.assertEqual(list(jisyo.parse_jmdict(io.BytesIO(xml), Counter())),
+        entries = list(jisyo.parse_jmdict(io.BytesIO(xml), Counter()))
+        self.assertEqual([e[:3] for e in entries],
                          [('a', 'A', 'noun'), ('b', 'b', 'noun'), ('c', 'A', 'noun'), ('c', 'B', 'noun'), ('d', 'd', '')])
+        self.assertEqual([e.pri for e in entries], ['ichi1|news1|spec1', None, 'ichi1|news1', None, None])
 
     def test_xlsx_sparse_inline_shared_strings(self):
         data = io.BytesIO()
@@ -67,7 +69,7 @@ class ConversionTests(unittest.TestCase):
             path.write_text('しんきんこうそく\t心筋梗塞\n')
             source = {'id': 'jmed', 'format': 'reading-tsv', 'sha256': jisyo.digest(path)}
             with patch.object(jisyo, 'CACHE', root):
-                self.assertEqual(list(jisyo.rows(source, Counter())),
+                self.assertEqual([e[:3] for e in jisyo.rows(source, Counter())],
                                  [('しんきんこうそく', '心筋梗塞', 'materialized vocabulary')])
                 path.write_text('reading\tsurface\texternal code\n')
                 source['sha256'] = jisyo.digest(path)
@@ -81,18 +83,18 @@ class ConversionTests(unittest.TestCase):
                         ('あ a', '空白キー'), ('かk', '書'), ('よし', '𠮷')])
         with tempfile.TemporaryDirectory() as d:
             tsv = Path(d)/'input.tsv'
-            tsv.write_text(''.join(k+'\t'+v+'\n' for k,v in pairs), encoding='utf-8')
+            tsv.write_text(''.join('nasi\t'+k+'\t'+v+'\n' for k,v in pairs), encoding='utf-8')
             Path(str(tsv)+'.manifest.json').write_text(json.dumps({'sources': []}))
             out = Path(d)/'SKK-JISYO.test.utf8'
             manifest = jisyo.export_skk(tsv, out)
             self.assertIn('coding: utf-8', out.read_text())
-            actual = list(jisyo.parse_skk(io.StringIO(out.read_text()), Counter()))
+            actual = [e[:3] for e in jisyo.parse_skk(io.StringIO(out.read_text()), Counter())]
             self.assertEqual(actual, [('けんさく', '検索', ''), ('けんさく', '研削', ''), ('よし', '𠮷', '')])
             self.assertEqual(manifest['skk']['pairs'], 3)
             self.assertEqual(manifest['skk']['unsupported_key_pairs'], 2)
             self.assertEqual(manifest['skk']['unsafe_candidate_pairs'], 3)
             original = out.read_bytes()
-            tsv.write_text('よし\t𠮷\nあ\t亜\n')
+            tsv.write_text('nasi\tよし\t𠮷\nnasi\tあ\t亜\n')
             with self.assertRaises(ValueError):
                 jisyo.export_skk(tsv, out)
             self.assertEqual(out.read_bytes(), original)
@@ -118,6 +120,21 @@ class ConversionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     jisyo.ingest(sources)
                 self.assertEqual(jisyo.digest(root/'db.sqlite'), original)
+
+    def test_ingest_keeps_rank_lowest_cost_first_pri_and_widest_scope(self):
+        E = jisyo.Entry
+        parsed = [E('あ', '亜', 'p1', cost=50), E('い', '以', '', scope='skk'), E('あ', '亜', 'p2', cost=10, pri='news1'),
+                  E('い', '以', '', scope='migemo'), E('う', '宇', '', pri='ichi1'), E('う', '宇', '', pri='spec1'),
+                  E('え', '江', '', scope='skk'), E('え', '江', '', scope='skk')]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            with patch.multiple(jisyo, DB=root/'db.sqlite', ROOT=root, rows=lambda source, stats: iter(parsed)):
+                jisyo.ingest([dict(id='one')])
+                import sqlite3
+                with sqlite3.connect(root/'db.sqlite') as db:
+                    self.assertEqual(db.execute('SELECT reading,kind,scope,rank,cost,pri,pos FROM entries ORDER BY reading').fetchall(),
+                                     [('あ', 'nasi', 'all', 0, 10, 'news1', 'p1'), ('い', 'nasi', 'all', 1, None, None, ''),
+                                      ('う', 'nasi', 'all', 4, None, 'ichi1', ''), ('え', 'nasi', 'skk', 6, None, None, '')])
 
 if __name__ == '__main__':
     unittest.main()

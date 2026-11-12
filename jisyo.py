@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Collect versioned public lexicons and export RustMigemo dictionaries (stdlib only)."""
 import argparse
-from collections import Counter
+from collections import Counter, namedtuple
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import csv
@@ -29,6 +29,8 @@ LOCK = ROOT / 'sources.lock.json'
 DB = ROOT / 'data/lexicon.sqlite3'
 READING_SEPARATORS = str.maketrans('', '', '・、。「」【】')
 NS = {'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+# kind: SKK okuri-nasi/okuri-ari; scope: all, skk-only or migemo-only; cost: Sudachi; pri: JMdict priority tags.
+Entry = namedtuple('Entry', 'reading surface pos kind scope cost pri', defaults=('nasi', 'all', None, None))
 
 
 def request(url):
@@ -192,7 +194,7 @@ def parse_skk(stream, stats):
             if not surface or surface.startswith(('(', '[', ']')) or '#' in surface:
                 stats['skk_special_candidate'] += 1
                 continue
-            yield key, surface, ''
+            yield Entry(key, surface, '')
 
 
 def parse_jmdict(stream, stats):
@@ -201,8 +203,8 @@ def parse_jmdict(stream, stats):
     for event, entry in events:
         if event != 'end' or entry.tag != 'entry':
             continue
-        spellings = entry.findall('k_ele/keb')
-        forms = [s.text for s in spellings]
+        kanji = {k.findtext('keb'): {p.text for p in k.findall('ke_pri')} for k in entry.findall('k_ele')}
+        forms = list(kanji)
         pos = '|'.join(sorted({p.text for p in entry.findall('sense/pos') + entry.findall('trans/name_type') if p.text}))
         for reading in entry.findall('r_ele'):
             key = reading.findtext('reb', '')
@@ -211,8 +213,9 @@ def parse_jmdict(stream, stats):
                 values = [key]
             else:
                 values = [s for s in forms if not restricted or s in restricted]
+            tags = {p.text for p in reading.findall('re_pri')}
             for surface in values:
-                yield key, surface, pos
+                yield Entry(key, surface, pos, pri='|'.join(sorted(tags | kanji.get(surface, set()))) or None)
         root.clear()
 
 
@@ -272,7 +275,7 @@ def rows(source, stats):
                     if len(row) < 18:
                         raise ValueError('Unexpected Sudachi CSV layout')
                     # Column 4 is original output surface; 0 is normalized trie key.
-                    yield unescape_sudachi(row[11]), unescape_sudachi(row[4]), '|'.join(row[5:11])
+                    yield Entry(unescape_sudachi(row[11]), unescape_sudachi(row[4]), '|'.join(row[5:11]), cost=int(row[3]))
     elif fmt == 'jmdict':
         with gzip.open(path) as f:
             yield from parse_jmdict(f, stats)
@@ -281,7 +284,7 @@ def rows(source, stats):
             for row in csv.reader(f, delimiter='\t'):
                 if len(row) != 2:
                     raise ValueError('Expected reading TAB surface')
-                yield row[0], row[1], 'materialized vocabulary'
+                yield Entry(row[0], row[1], 'materialized vocabulary')
     elif fmt == 'jmed':
         with zipfile.ZipFile(path) as archive:
             members = [n for n in archive.namelist() if n.endswith('_mini.xlsx')]
@@ -293,7 +296,7 @@ def rows(source, stats):
                 columns = {v.strip(): k for k, v in header.items()}
                 rc, sc = columns['出現形よみ'], columns['出現形']
                 for row in iterator:
-                    yield row.get(rc, ''), row.get(sc, ''), Path(name).stem
+                    yield Entry(row.get(rc, ''), row.get(sc, ''), Path(name).stem)
     else:
         raise ValueError(f'Unknown format: {fmt}')
 
@@ -307,18 +310,23 @@ def ingest(sources):
       PRAGMA journal_mode=OFF;
       PRAGMA cache_size=-131072;
       CREATE TABLE sources(id TEXT PRIMARY KEY, metadata TEXT NOT NULL);
-      CREATE TABLE entries(reading TEXT, surface TEXT, source TEXT, pos TEXT, original_reading TEXT,
-        confidence TEXT NOT NULL DEFAULT 'upstream-provided',
-        PRIMARY KEY(reading,surface,source)) WITHOUT ROWID;
+      CREATE TABLE entries(reading TEXT, surface TEXT, source TEXT, kind TEXT NOT NULL CHECK(kind IN ('nasi','ari')),
+        scope TEXT NOT NULL CHECK(scope IN ('all','skk','migemo')), rank INTEGER NOT NULL, cost INTEGER, pri TEXT,
+        pos TEXT, original_reading TEXT, confidence TEXT NOT NULL DEFAULT 'upstream-provided',
+        PRIMARY KEY(reading,surface,source,kind)) WITHOUT ROWID;
     ''')
+    # Repeated keys within a source keep the first rank/pos/reading, the lowest cost and the widest scope.
+    insert = '''INSERT INTO entries(reading,surface,source,kind,scope,rank,cost,pri,pos,original_reading) VALUES (?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(reading,surface,source,kind) DO UPDATE SET rank=min(rank,excluded.rank),
+        scope=CASE WHEN scope=excluded.scope THEN scope ELSE 'all' END,
+        cost=coalesce(min(cost,excluded.cost),cost,excluded.cost), pri=coalesce(pri,excluded.pri)'''
     report = {}
     try:
         for source in sources:
             stats = Counter()
             con.execute('INSERT INTO sources VALUES (?,?)', (source['id'], json.dumps(source, ensure_ascii=False)))
             batch = []
-            before = con.total_changes
-            for reading, surface, pos in rows(source, stats):
+            for rank, (reading, surface, pos, kind, scope, cost, pri) in enumerate(rows(source, stats)):
                 stats['parsed_pairs'] += 1
                 original_reading = reading
                 normalized = normalize(reading)
@@ -331,12 +339,12 @@ def ingest(sources):
                 if not surface or surface == '*' or any(unicodedata.category(c) in ('Cc', 'Cs') for c in surface):
                     stats['invalid_surface'] += 1
                     continue
-                batch.append((reading, surface, source['id'], pos, original_reading))
+                batch.append((reading, surface, source['id'], kind, scope, rank, cost, pri, pos, original_reading))
                 if len(batch) >= 10000:
-                    con.executemany('INSERT OR IGNORE INTO entries(reading,surface,source,pos,original_reading) VALUES (?,?,?,?,?)', batch)
+                    con.executemany(insert, batch)
                     batch.clear()
-            con.executemany('INSERT OR IGNORE INTO entries(reading,surface,source,pos,original_reading) VALUES (?,?,?,?,?)', batch)
-            stats['unique_source_pairs'] = con.total_changes - before
+            con.executemany(insert, batch)
+            stats['unique_source_pairs'] = con.execute('SELECT COUNT(*) FROM entries WHERE source=?', (source['id'],)).fetchone()[0]
             if not stats['unique_source_pairs']:
                 raise ValueError(f"{source['id']} produced no vocabulary")
             report[source['id']] = dict(stats)
@@ -353,31 +361,35 @@ def ingest(sources):
         raise
 
 
-def export(ids, output):
+def selection(ids):
     if not DB.exists():
         raise ValueError('Run ingest first')
-    output = Path(output)
-    output.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(f'file:{DB}?mode=ro', uri=True)
     sources = [json.loads(row[0]) for row in con.execute('SELECT metadata FROM sources ORDER BY id')]
     selected = set(ids) if ids else {s['id'] for s in sources}
     unknown = selected - {s['id'] for s in sources}
     if unknown:
+        con.close()
         raise ValueError(f'Unknown source IDs: {sorted(unknown)}')
-    where = ' WHERE source IN (' + ','.join('?' for _ in selected) + ')'
-    query = 'SELECT reading,surface FROM entries' + where + ' GROUP BY reading,surface ORDER BY reading,surface'
+    return con, sources, sorted(selected), ' WHERE source IN (' + ','.join('?' for _ in selected) + ')'
+
+
+def write_export(output, records, sources, selected, transformation):
+    """Write TAB-separated records atomically, then the manifest and upstream notices."""
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
     tmp = output.with_suffix(output.suffix + '.tmp')
     count = 0
     with tmp.open('w', encoding='utf-8', newline='') as f:
-        for reading, surface in con.execute(query, sorted(selected)):
-            f.write(reading + '\t' + surface + '\n')
+        for record in records:
+            f.write('\t'.join(record) + '\n')
             count += 1
-    con.close()
     if not count:
+        tmp.unlink(missing_ok=True)
         raise ValueError('No pairs selected')
     tmp.replace(output)
     manifest = dict(pairs=count, sha256=digest(output), sources=[s for s in sources if s['id'] in selected],
-                    transformation='NFKC/lowercase/hiragana readings; Japanese separator punctuation removed from search keys (original readings in SQLite); original surfaces; duplicate reading/surface pairs merged; see import-report.json for exclusions')
+                    transformation=transformation)
     write_json(str(output) + '.manifest.json', manifest)
     notices = output.parent / (output.name + '.notices')
     notices.mkdir(exist_ok=True)
@@ -403,51 +415,89 @@ def export(ids, output):
                     if name.endswith('README.pdf'):
                         (folder / 'README.pdf').write_bytes(z.read(name))
     print(f'exported {count:,} pairs: {output}', flush=True)
+    return manifest
+
+
+def export(ids, output):
+    """RustMigemo input: reading TAB surface, okuri-nasi entries not restricted to SKK."""
+    con, sources, selected, where = selection(ids)
+    query = ('SELECT reading,surface FROM entries' + where + " AND kind='nasi' AND scope IN ('all','migemo')"
+             ' GROUP BY reading,surface ORDER BY reading,surface')
+    try:
+        return write_export(output, con.execute(query, selected), sources, selected,
+                            'NFKC/lowercase/hiragana readings; Japanese separator punctuation removed from search keys (original readings in SQLite); original surfaces; duplicate reading/surface pairs merged; see import-report.json for exclusions')
+    finally:
+        con.close()
+
+
+def export_skk_tsv(ids, output):
+    """SKK input: kind TAB key TAB surface, already in final SKK line and candidate order."""
+    con, sources, selected, where = selection(ids)
+    query = ("SELECT 'nasi',reading,surface FROM entries" + where + " AND kind='nasi' AND scope IN ('all','skk')"
+             ' GROUP BY reading,surface ORDER BY reading,surface')
+    try:
+        return write_export(output, con.execute(query, selected), sources, selected,
+                            'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-nasi candidates lexical; normalization as the RustMigemo TSV')
+    finally:
+        con.close()
 
 
 def export_skk(tsv, output, release_headers=()):
-    """UTF-8, okuri-nasi supplemental dictionary; plain candidates only."""
+    """UTF-8 SKK dictionary from export_skk_tsv order; plain candidates only."""
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     tmp = output.with_suffix(output.suffix + '.tmp')
     stats = Counter()
     previous = None
     candidates = []
-    def valid_key(key):
-        return (key and not any(c.isspace() or c in '/;#[]' for c in key)
-                and not key.startswith(';') and not re.search('[ぁ-ゖー][a-z]$', key))
+    def valid_key(kind, key):
+        return (key and not any(c.isspace() or c in '/;#[]' for c in key) and not key.startswith(';')
+                and bool(re.search('[ぁ-ゖー][a-z]$', key)) == (kind == 'ari'))
     def valid_candidate(value):
         return (value and not any(c in value for c in '/;#[]')
                 and not value.startswith('('))
-    with open(tsv, encoding='utf-8') as source, tmp.open('w', encoding='utf-8', newline='\n') as dest:
-        dest.write(';; -*- mode: fundamental; coding: utf-8 -*-\n'
-                   ';; myhugejisyo: generated supplementary dictionary; see accompanying notices.\n'
-                   + ''.join(';; ' + line + '\n' for line in release_headers)
-                   + ';; okuri-ari entries.\n;; okuri-nasi entries.\n')
-        def flush():
-            if candidates:
-                dest.write(previous + ' /' + '/'.join(candidates) + '/\n')
-                stats['readings'] += 1
-        for line in source:
-            key, value = line.rstrip('\n').split('\t')
-            stats['input_pairs'] += 1
-            if previous is not None and key < previous:
-                raise ValueError('SKK input TSV must be sorted by reading')
-            if key != previous:
-                flush()
-                candidates = []
-                previous = key
-            if not valid_key(key):
-                stats['unsupported_key_pairs'] += 1
-            elif not valid_candidate(value):
-                stats['unsafe_candidate_pairs'] += 1
-            else:
-                candidates.append(value)
-                stats['pairs'] += 1
-        flush()
-    if not stats['pairs']:
+    try:
+        with open(tsv, encoding='utf-8') as source, tmp.open('w', encoding='utf-8', newline='\n') as dest:
+            dest.write(';; -*- mode: fundamental; coding: utf-8 -*-\n'
+                       ';; myhugejisyo: generated supplementary dictionary; see accompanying notices.\n'
+                       + ''.join(';; ' + line + '\n' for line in release_headers)
+                       + ';; okuri-ari entries.\n')
+            def flush():
+                if candidates:
+                    dest.write(previous[1] + ' /' + '/'.join(candidates) + '/\n')
+                    stats[previous[0] + '_readings'] += 1
+            for line in source:
+                kind, key, value = line.rstrip('\n').split('\t')
+                stats['input_pairs'] += 1
+                if (kind, key) != previous:
+                    # okuri-ari keys descend, then okuri-nasi keys ascend (standard SKK layout).
+                    if kind not in ('ari', 'nasi') or previous and (
+                            (previous[0], kind) == ('nasi', 'ari') or kind == previous[0] and (key > previous[1]) == (kind == 'ari')):
+                        raise ValueError('SKK input TSV must be in SKK output order')
+                    flush()
+                    if kind == 'nasi' and (not previous or previous[0] == 'ari'):
+                        dest.write(';; okuri-nasi entries.\n')
+                    candidates = []
+                    previous = kind, key
+                if not valid_key(kind, key):
+                    stats['unsupported_key_pairs'] += 1
+                elif not valid_candidate(value):
+                    stats['unsafe_candidate_pairs'] += 1
+                elif value in candidates:
+                    stats['duplicate_pairs'] += 1
+                else:
+                    candidates.append(value)
+                    stats[kind + '_pairs'] += 1
+            flush()
+            if not previous or previous[0] == 'ari':
+                dest.write(';; okuri-nasi entries.\n')
+        stats['pairs'] = stats['ari_pairs'] + stats['nasi_pairs']
+        stats['readings'] = stats['ari_readings'] + stats['nasi_readings']
+        if not stats['pairs']:
+            raise ValueError('SKK export contains no candidates')
+    except BaseException:
         tmp.unlink(missing_ok=True)
-        raise ValueError('SKK export contains no candidates')
+        raise
     tmp.replace(output)
     manifest = json.loads(Path(str(tsv) + '.manifest.json').read_text())
     manifest.update(format='SKK UTF-8 okuri-nasi supplement', skk=dict(stats),
@@ -470,7 +520,7 @@ def main():
     build = sub.add_parser('build', help='Export and build RustMigemo compact dictionary')
     build.add_argument('--sources', nargs='+')
     build.add_argument('--output', default=str(ROOT / 'dist/migemo-compact-dict'))
-    skk = sub.add_parser('skk', help='Export UTF-8 SKK supplementary dictionary')
+    skk = sub.add_parser('skk', help='Export the SKK input TSV and UTF-8 SKK supplementary dictionary')
     skk.add_argument('--sources', nargs='+')
     skk.add_argument('--output', default=str(ROOT / 'dist/SKK-JISYO.myhugejisyo.utf8'))
     sub.add_parser('list', help='List locked sources')
@@ -490,8 +540,8 @@ def main():
     elif args.command == 'export':
         export(args.sources, args.output)
     elif args.command == 'skk':
-        tsv = args.output + '.tsv'
-        export(args.sources, tsv)
+        tsv = args.output + '.skk.tsv'
+        export_skk_tsv(args.sources, tsv)
         export_skk(tsv, args.output)
     elif args.command == 'build':
         tsv = args.output + '.tsv'

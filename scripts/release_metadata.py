@@ -81,9 +81,9 @@ python3 scripts/verify_release.py --directory .
 python3 scripts/rebuild.py
 ```
 
-`rebuild.py` は vendor に同梱した固定版依存を使用して `cargo build --release --locked --offline` を実行します。ネット接続は不要です。編集可能な `editable/<profile>.tsv` から両形式を再生成し、RELEASE.json の全成果物ハッシュと比較します。語彙を編集した場合はハッシュが変わるため、`--allow-changes` を指定してください。SKKの変更表示は元リリースのメタデータから再現します。改変物を再配布するときは自身の変更主体・日付も追記してください。
+`rebuild.py` は vendor に同梱した固定版依存を使用して `cargo build --release --locked --offline` を実行します。ネット接続は不要です。編集可能な `editable/<profile>.tsv`（RustMigemo用「読み TAB 表記」）と `editable/<profile>.skk.tsv`（SKK用「種別 TAB 見出し TAB 候補」、出力と同じ行順・候補順）から両形式を再生成し、RELEASE.json の全成果物ハッシュと比較します。語彙を編集した場合はハッシュが変わるため、`--allow-changes` を指定してください。SKKの変更表示は元リリースのメタデータから再現します。改変物を再配布するときは自身の変更主体・日付も追記してください。
 
-元入力から取り込み直す場合は `python3 jisyo.py ingest` を実行し、RELEASE.json の各profileのsource_idsを `python3 jisyo.py export --sources ... --output rebuilt.tsv` に指定してください。取り込み条件・除外処理は jisyo.py、各入力の版・ハッシュは sources.lock.json です。`fetch --update` は別版の取得なので、同一版の再生成には実行しません。
+元入力から取り込み直す場合は `python3 jisyo.py ingest` を実行し、RELEASE.json の各profileのsource_idsを `python3 jisyo.py export --sources ... --output rebuilt.tsv`（SKKは `python3 jisyo.py skk --sources ... --output rebuilt.utf8`）に指定してください。取り込み条件・除外処理は jisyo.py、各入力の版・ハッシュは sources.lock.json です。`fetch --update` は別版の取得なので、同一版の再生成には実行しません。
 
 JMEDの入力だけは外部医療コードを含まない正規化済みの読み・表記TSVです。原ZIPの版・ハッシュ・取得日もロックに残します。元の読みと単語ごとの出典対応は provenance.tsv（TSVの標準CSV引用規則）に保存しています。重複統合された候補にも複数の出典行を残します。SQLiteは自動再生成できる中間物なので省略します。
 

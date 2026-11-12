@@ -66,13 +66,13 @@ def archive_sources(output, sources, stage, profiles):
         copy_path(ROOT/name, stage/name)
     copy_path(ROOT/'data/import-report.json', stage/'data/import-report.json')
     for profile in profiles:
-        for name in [profile+'.tsv', profile+'.tsv.manifest.json']:
+        for name in [profile+'.tsv', profile+'.tsv.manifest.json', profile+'.skk.tsv', profile+'.skk.tsv.manifest.json']:
             copy_path(output/name, stage/'editable'/name)
     selected = sorted(s['id'] for s in sources)
     with closing(sqlite3.connect(f'file:{jisyo.DB}?mode=ro', uri=True)) as db, (stage/'provenance.tsv').open('w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f, delimiter='\t', lineterminator='\n')
-        writer.writerow(['reading', 'surface', 'source', 'original_reading'])
-        query = 'SELECT reading,surface,source,original_reading FROM entries WHERE source IN (' + ','.join('?' for _ in selected) + ') ORDER BY reading,surface,source'
+        writer.writerow(['reading', 'surface', 'source', 'original_reading', 'kind', 'scope'])
+        query = 'SELECT reading,surface,source,original_reading,kind,scope FROM entries WHERE source IN (' + ','.join('?' for _ in selected) + ') ORDER BY reading,surface,source,kind'
         writer.writerows(db.execute(query, selected))
     vendor = stage/'vendor'
     config = subprocess.check_output(['cargo', 'vendor', '--locked', str(vendor)], cwd=ROOT, text=True)
@@ -121,23 +121,27 @@ def package(output, profiles, repository, tag, modifier):
             binary = output/('migemo-compact-dict'+suffix)
             skk = output/('SKK-JISYO.myhugejisyo'+suffix+'.utf8')
             tsv = output/(profile+'.tsv')
+            skk_tsv = output/(profile+'.skk.tsv')
             jisyo.export(PROFILES[profile], tsv)
-            manifest_path = Path(str(tsv)+'.manifest.json')
-            manifest = json.loads(manifest_path.read_text())
-            manifest.update(release=info['tag'], generated_at=info['generated_at'],
-                            modified_by=info['modifier'], license=LICENSES[profile], profile=profile,
-                            corresponding_source_url=info['corresponding_source_url'],
-                            changes='CHANGES.md', attribution='THIRD_PARTY_NOTICES.md and UPSTREAM_NOTICES/')
-            jisyo.write_json(manifest_path, manifest)
+            jisyo.export_skk_tsv(PROFILES[profile], skk_tsv)
+            for path in [tsv, skk_tsv]:
+                manifest_path = Path(str(path)+'.manifest.json')
+                manifest = json.loads(manifest_path.read_text())
+                manifest.update(release=info['tag'], generated_at=info['generated_at'],
+                                modified_by=info['modifier'], license=LICENSES[profile], profile=profile,
+                                corresponding_source_url=info['corresponding_source_url'],
+                                changes='CHANGES.md', attribution='THIRD_PARTY_NOTICES.md and UPSTREAM_NOTICES/')
+                jisyo.write_json(manifest_path, manifest)
+            manifest = json.loads(Path(str(tsv)+'.manifest.json').read_text())
             run(str(ROOT/'target/release/myhugejisyo'), 'build', str(tsv), str(binary))
-            skk_manifest = jisyo.export_skk(tsv, skk, skk_headers(info, profile))
+            skk_manifest = jisyo.export_skk(skk_tsv, skk, skk_headers(info, profile))
             binary_manifest = dict(manifest, binary_sha256=jisyo.digest(binary), binary_bytes=binary.stat().st_size,
                                    verification='every exported pair round-tripped through RustMigemo')
             jisyo.write_json(str(binary)+'.manifest.json', binary_manifest)
             copy_path(Path(str(tsv)+'.notices'), stage/'UPSTREAM_NOTICES')
             info['profiles'][profile] = dict(license=LICENSES[profile], source_ids=PROFILES[profile],
                 reading_surface_pairs=manifest['pairs'], skk=skk_manifest['skk'],
-                tsv_sha256=jisyo.digest(tsv),
+                tsv_sha256=jisyo.digest(tsv), skk_tsv_sha256=jisyo.digest(skk_tsv),
                 dictionary_sha256={binary.name: jisyo.digest(binary), skk.name: jisyo.digest(skk)})
         write_documents(stage, ROOT, info, sources)
         for profile in profiles:
@@ -159,9 +163,10 @@ def package(output, profiles, repository, tag, modifier):
     jisyo.write_json(output/'sources.lock.json', dict(schema_version=1, sources=sources))
     jisyo.write_json(output/'release-manifest.json', info)
     for profile in profiles:
-        (output/(profile+'.tsv')).unlink()
-        (output/(profile+'.tsv.manifest.json')).unlink()
-        shutil.rmtree(output/(profile+'.tsv.notices'))
+        for name in [profile+'.tsv', profile+'.skk.tsv']:
+            (output/name).unlink()
+            (output/(name+'.manifest.json')).unlink()
+            shutil.rmtree(output/(name+'.notices'))
     for archive in sorted(output.glob('*.tar.gz')):
         verify_archive(archive)
     files = sorted(p for p in output.iterdir() if p.is_file())
