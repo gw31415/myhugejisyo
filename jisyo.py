@@ -463,8 +463,10 @@ def rows(source, stats):
                     inflected = row[10] != '*' and not row[10].startswith('終止形')
                     reading, surface = unescape_sudachi(row[11]), unescape_sudachi(row[4])
                     yield Entry(reading, surface, '|'.join(row[5:11]), scope='migemo' if inflected else 'all', cost=int(row[3]))
-                    # Each inflected verb/adjective row (column 9: 活用型) is also split into an okuri-ari key.
-                    split = (row[5] in ('動詞', '形容詞') and row[13] != '*' and SUDACHI_OKURI.fullmatch(row[9])
+                    # Each inflected verb/adjective row (column 9: 活用型) is also split into an okuri-ari key. Rows with
+                    # connection id -1 (columns 1-2, always cost 0) are not lattice words, only split-target variants
+                    # (散る アカル, 出る イデル, 剥ぐ パグ, 会う アウ ウ音便): they never yield okuri-ari keys.
+                    split = (row[1] != '-1' and row[5] in ('動詞', '形容詞') and row[13] != '*' and SUDACHI_OKURI.fullmatch(row[9])
                              and row[9] not in OKURI_EXCLUDED and okuri_split(surface, reading))
                     if split:
                         lemmas.setdefault(row[13], []).append((row[9], row[10], unescape_sudachi(row[12]), surface, reading, int(row[3]), split))

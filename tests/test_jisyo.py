@@ -212,8 +212,8 @@ class ConversionTests(unittest.TestCase):
                                  [('かk', '書', '', 'ari', 'skk'), ('かk', '描', '', 'ari', 'skk'), ('かk', '掛', '', 'ari', 'skk')])
 
 
-def sudachi_row(surface, reading, conjugation, form, lemma, normalized, cost=5000, pos='動詞'):
-    return ','.join([surface, '1', '1', str(cost), surface, pos, '一般', '*', '*', conjugation, form, reading, normalized,
+def sudachi_row(surface, reading, conjugation, form, lemma, normalized, cost=5000, pos='動詞', connection='1'):
+    return ','.join([surface, connection, connection, str(cost), surface, pos, '一般', '*', '*', conjugation, form, reading, normalized,
                      str(lemma), 'A'] + ['*'] * 4)
 
 
@@ -296,7 +296,11 @@ class OkuriTests(unittest.TestCase):
                 sudachi_row('来る', 'クル', 'カ行変格', '終止形-一般', 40, '来る', 4500),
                 sudachi_row('来い', 'コイ', 'カ行変格', '命令形', 40, '来る', 4500),
                 sudachi_row('ググる', 'ググル', '五段-ラ行', '終止形-一般', 50, 'ググる'),
-                sudachi_row('愛する', 'アイスル', 'サ行変格', '終止形-一般', 60, '愛する')]
+                sudachi_row('愛する', 'アイスル', 'サ行変格', '終止形-一般', 60, '愛する'),
+                # Connection id -1 rows (cost 0) are split-only variants, not words: 散る read アカル, a stray 書っ.
+                sudachi_row('散る', 'アカル', '五段-ラ行', '終止形-一般', 70, '散る', 0, connection='-1'),
+                sudachi_row('散ら', 'アカラ', '五段-ラ行', '未然形-一般', 70, '散る', 0, connection='-1'),
+                sudachi_row('書っ', 'カッ', '五段-カ行', '連用形-促音便', 10, '書く', 0, connection='-1')]
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             (root/'sudachi').mkdir()
