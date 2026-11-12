@@ -447,6 +447,75 @@ def export(ids, output):
         con.close()
 
 
+# Okuri-nasi order: skk-l candidates in SKK-JISYO.L order, then a pseudo-cost on the Sudachi small_lex cost scale
+# (lower first), estimated from dictionary-internal signals only; scripts/eval_order.py measures it.
+# JMdict nf01-06,07-12,..,43-48, other *1, other *2: median sudachi-small cost of the pairs having both, by best tag
+# (gai1 pooled with *1), made monotone by pooling adjacent violators.
+NF_COST = (6517, 7212, 7360, 7401, 7404, 7404, 7488, 7488)
+PRI_COST = {'1': 7736, '2': 7906}
+# sudachi-small costs katakana low for segmentation: JMdict pairs without priority, median non-katakana 7790 - katakana 2148.
+KATAKANA_SHIFT = 5642
+# Pairs without signal follow ~96% of sudachi-small costs, by source class; ASCII under kana keys after those.
+DEFAULT_COST = dict.fromkeys(['jmdict', 'skk-hukugougo', 'skk-law', 'skk-jis2004'], 12000) | dict.fromkeys(
+    ['sudachi-small', 'sudachi-core', 'sudachi-notcore'], 13000) | dict.fromkeys(['skk-jinmei', 'skk-geo', 'skk-station', 'skk-propernoun'], 14000) | {
+    'jmnedict': 15000, 'jawiki': 16000, 'jmed': 17000}
+OTHER_COST, ASCII_COST = 18000, 20000
+
+
+def pri_cost(pri):
+    tags = pri.split('|')
+    nf = [int(t[2:]) for t in tags if t.startswith('nf') and t[2:].isdigit()]
+    if nf:
+        return NF_COST[min(max(min(nf) - 1, 0) // 6, len(NF_COST) - 1)]
+    return PRI_COST['1' if any(t.endswith('1') for t in tags) else '2']
+
+
+def signal_cost(surface, rows):
+    """Lowest sudachi-small cost or JMdict priority pseudo-cost; None without such a signal."""
+    signals = [pri_cost(pri) for source, _, _, pri in rows if source == 'jmdict' and pri]
+    # Cost 0 marks irregular variants (ゐざる, たゝく), not frequent words; untagged katakana is shifted.
+    shift = KATAKANA_SHIFT if not signals and re.fullmatch('[ァ-ヺー・ヽヾ]+', surface) else 0
+    signals += [cost + shift for source, _, cost, _ in rows if source == 'sudachi-small' and cost]
+    return min(signals, default=None)
+
+
+def candidate_order(key, surface, rows, skk_sources=()):
+    """Sort key of one okuri-nasi candidate; rows: (source, rank, cost, pri) of every source providing it."""
+    ranks = [rank for source, rank, _, _ in rows if source == 'skk-l']
+    if ranks:
+        return (0, min(ranks))
+    cost, tie = signal_cost(surface, rows), ('', 0)
+    if cost is None:
+        cost, source, rank = min((DEFAULT_COST.get(source, OTHER_COST), source, rank) for source, rank, _, _ in rows)
+        tie = (source, rank if source in skk_sources else 0)
+    if surface.isascii() and not key.isascii():
+        cost = max(cost, ASCII_COST)
+    # The kana spelling identical to the key goes last: SKK confirms it without conversion.
+    # Ties: more source families (skk, sudachi, jmdict, ...) first, then SKK source order, then code points.
+    families = len({source.split('-')[0] for source, _, _, _ in rows})
+    return (1 + (surface == key and not key.isascii()), cost, -families, *tie, surface)
+
+
+def candidate_rows(rows):
+    """{surface: [(source, rank, cost, pri)]} from rows (surface, source, rank, cost, pri[, original_reading])."""
+    rows = list(rows)
+    by_surface = {row[0]: [] for row in rows}
+    for surface, source, rank, cost, pri, *original in rows:
+        # A JMdict katakana reading marks a loanword: its priority belongs to that spelling, not to ateji like 珈琲.
+        if (source == 'jmdict' and pri and original and original[0] != surface and original[0] in by_surface
+                and re.fullmatch('[ァ-ヺー・ヽヾ]+', original[0])):
+            by_surface[original[0]].append((source, rank, None, pri))
+            pri = None
+        by_surface[surface].append((source, rank, cost, pri))
+    return by_surface
+
+
+def nasi_candidates(key, rows, skk_sources=()):
+    """Candidates of one okuri-nasi key in output order; rows as for candidate_rows."""
+    by_surface = candidate_rows(rows)
+    return sorted(by_surface, key=lambda s: candidate_order(key, s, by_surface[s], skk_sources))
+
+
 def export_skk_tsv(ids, output):
     """SKK input: kind TAB key TAB surface, already in final SKK line and candidate order."""
     con, sources, selected, where = selection(ids)
@@ -457,14 +526,18 @@ def export_skk_tsv(ids, output):
                                                   + " AND kind='ari' AND scope IN ('all','skk')", selected):
         best = ari.setdefault(key, {})
         best[surface] = min(best.get(surface, (order[source], rank)), (order[source], rank))
-    query = ("SELECT 'nasi',reading,surface FROM entries" + where + " AND kind='nasi' AND scope IN ('all','skk')"
-             ' GROUP BY reading,surface ORDER BY reading,surface')
+    # okuri-nasi: keys ascending, streamed in primary-key order one key at a time.
+    skk_sources = {s['id'] for s in sources if s.get('format') == 'skk'}
+    query = ('SELECT reading,surface,source,rank,cost,pri,original_reading FROM entries' + where
+             + " AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
+    nasi = (('nasi', key, surface) for key, rows in itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
+            for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources))
     records = itertools.chain((('ari', key, surface) for key in sorted(ari, reverse=True)
-                               for surface in sorted(ari[key], key=ari[key].get)),
-                              con.execute(query, selected))
+                               for surface in sorted(ari[key], key=ari[key].get)), nasi)
     try:
         return write_export(output, records, sources, selected,
-                            'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with candidates by source then source order; okuri-nasi keys and candidates ascending; normalization as the RustMigemo TSV')
+                            'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with candidates by source then source order; '
+                            'okuri-nasi keys ascending with skk-l candidates first in SKK-JISYO.L order, then by estimated cost (sudachi-small cost, JMdict priority, source defaults); normalization as the RustMigemo TSV')
     finally:
         con.close()
 
@@ -528,7 +601,10 @@ def export_skk(tsv, output, release_headers=()):
     tmp.replace(output)
     manifest = json.loads(Path(str(tsv) + '.manifest.json').read_text())
     manifest.update(format='SKK UTF-8 supplement with okuri-ari and okuri-nasi sections', skk=dict(stats),
-                    sha256=digest(output), candidate_order='okuri-ari: skk-l first, then other sources in catalog order, each in source order; okuri-nasi: lexical; use after personal/base SKK dictionaries',
+                    sha256=digest(output), candidate_order='okuri-ari: skk-l first, then other sources in catalog order, each in source order; okuri-nasi: as in the input TSV '
+                                    '(jisyo.py: skk-l first in SKK-JISYO.L order, then ascending estimated cost from dictionary-internal signals: '
+                                    'sudachi-small cost, JMdict priority tags, per-source defaults; kana-identical candidates last); '
+                                    'not measured usage frequency; use after personal/base SKK dictionaries',
                     exclusions='unrepresentable plain SKK keys/candidates omitted; no Lisp expressions emitted')
     write_json(str(output) + '.manifest.json', manifest)
     print(f"exported SKK: {dict(stats)}", flush=True)

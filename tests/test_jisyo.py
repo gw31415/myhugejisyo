@@ -203,5 +203,80 @@ class ConversionTests(unittest.TestCase):
                 self.assertEqual([e[:5] for e in jisyo.parse_skk(io.StringIO(text), Counter())][:3],
                                  [('かk', '書', '', 'ari', 'skk'), ('かk', '描', '', 'ari', 'skk'), ('かk', '掛', '', 'ari', 'skk')])
 
+class CandidateOrderTests(unittest.TestCase):
+    SKK = {'skk-l', 'skk-jinmei', 'jawiki'}
+
+    def order(self, key, rows):
+        return jisyo.nasi_candidates(key, rows, self.SKK)
+
+    def test_skk_l_first_then_cost_pri_defaults_and_adjustments(self):
+        rows = [('幹事', 'sudachi-small', 9, 100, None), ('監事', 'sudachi-small', 1, 7403, None),
+                ('感じ', 'sudachi-small', 2, 5548, None), ('完治', 'jmdict', 3, None, 'news1|nf22'),
+                ('冠辞', 'jmdict', 4, None, None), ('丞治', 'sudachi-core', 5, 0, None), ('乾二', 'jmnedict', 6, None, 'spec1'),
+                ('関自', 'jawiki', 7, None, None), ('患耳', 'jmed', 8, None, None), ('Kanji', 'sudachi-small', 9, 100, None),
+                ('かんじ', 'sudachi-small', 10, 50, None), ('カンジ', 'sudachi-small', 11, 2148, None),
+                ('幹事', 'skk-l', 21, None, None), ('漢字', 'skk-l', 20, None, None), ('漢字', 'jawiki', 1, None, None)]
+        self.assertEqual(self.order('かんじ', rows),
+                         ['漢字', '幹事', '感じ', '完治', '監事', 'カンジ', '冠辞', '丞治', '乾二', '関自', '患耳', 'Kanji', 'かんじ'])
+        self.assertEqual(jisyo.pri_cost('ichi1|news1|nf01'), jisyo.NF_COST[0])
+        self.assertEqual(jisyo.pri_cost('news2|nf48'), jisyo.NF_COST[-1])
+        self.assertEqual([jisyo.pri_cost(p) for p in ['gai1', 'spec1|news2', 'ichi2']],
+                         [jisyo.PRI_COST['1'], jisyo.PRI_COST['1'], jisyo.PRI_COST['2']])
+        self.assertEqual(list(jisyo.NF_COST), sorted(jisyo.NF_COST))
+        self.assertLess(max(jisyo.NF_COST), jisyo.PRI_COST['1'])
+        self.assertLess(jisyo.PRI_COST['1'], jisyo.PRI_COST['2'])
+
+    def test_katakana_zero_cost_and_skk_l_exceptions(self):
+        coffee = [('珈琲', 'sudachi-small', 1, 5856, None), ('コーヒー', 'sudachi-small', 2, 1541, None),
+                  ('珈琲', 'jmdict', 3, None, 'gai1|ichi1', 'コーヒー'), ('coffee', 'sudachi-small', 4, 2833, None)]
+        # The JMdict tag of the katakana reading moves to that spelling, so it is not shifted.
+        self.assertEqual(self.order('こーひー', coffee), ['コーヒー', '珈琲', 'coffee'])
+        self.assertEqual(self.order('こーひー', [r[:5] for r in coffee]), ['珈琲', 'コーヒー', 'coffee'])
+        self.assertEqual(jisyo.candidate_rows(coffee[2:3] + [('可否', 'jmdict', 5, None, None, 'かひ')]),
+                         {'珈琲': [('jmdict', 3, None, 'gai1|ichi1')], '可否': [('jmdict', 5, None, None)]})
+        self.assertEqual(self.order('おくらす', [('オクラス', 'sudachi-small', 1, 3888, None), ('遅らす', 'jmdict', 2, None, 'ichi1')]),
+                         ['遅らす', 'オクラス'])
+        self.assertEqual(self.order('たたく', [('たゝく', 'sudachi-small', 1, 0, None), ('叩く', 'sudachi-small', 2, 7329, None),
+                                              ('敲く', 'jmdict', 3, None, None)]), ['叩く', '敲く', 'たゝく'])
+        # Rule 1 wins over the adjustments: skk-l keeps its own order even for ASCII or the key itself.
+        self.assertEqual(self.order('てすと', [('てすと', 'skk-l', 1, None, None), ('test', 'skk-l', 2, None, None),
+                                              ('試験', 'sudachi-small', 3, 10, None)]), ['てすと', 'test', '試験'])
+        self.assertEqual(self.order('cd', [('cd', 'jmdict', 1, None, None), ('CD', 'sudachi-small', 2, 5000, None)]), ['CD', 'cd'])
+
+    def test_ties_are_deterministic(self):
+        import random
+        rows = [('乙', 'sudachi-small', 1, 7404, None), ('甲', 'sudachi-small', 2, 7404, None),
+                ('丙', 'sudachi-small', 3, 7404, None), ('丙', 'jawiki', 4, None, None),
+                ('名二', 'skk-jinmei', 8, None, None), ('名一', 'skk-jinmei', 9, None, None),
+                ('地', 'jmnedict', 5, None, None), ('天', 'jmnedict', 3, None, None)]
+        expected = ['丙', '乙', '甲', '名二', '名一', '地', '天']
+        for seed in range(5):
+            random.Random(seed).shuffle(rows)
+            self.assertEqual(self.order('き', rows), expected)
+
+    def test_export_orders_per_selected_sources(self):
+        E = jisyo.Entry
+        parsed = {'skk-l': [E('かんじ', '監事', ''), E('かんじ', '漢字', '')],
+                  'sudachi-small': [E('かんじ', '漢字', '', cost=6125), E('かんじ', '感じ', '', cost=5548),
+                                    E('かんじ', 'かんじ', '', cost=10), E('かか', '書か', '', scope='migemo', cost=1)],
+                  'jmdict': [E('かんじ', '漢字', '', pri='ichi1|news1|nf07'), E('かんじ', '監事', '', pri='news2|nf26'),
+                             E('かんじ', '冠辞', ''), E('かんじ', '幹事', '', pri='ichi1|news1|nf01')],
+                  'jmnedict': [E('かんじ', '寛治', '', pri='spec1'), E('かんじ', 'かんじ', '')],
+                  'jmed': [E('かんじ', '患児', ''), E('かんじ', '患耳', '')]}
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            with patch.multiple(jisyo, DB=root/'db.sqlite', ROOT=root, rows=lambda source, stats: iter(parsed[source['id']])):
+                jisyo.ingest([dict(id=id, format='skk' if id == 'skk-l' else 'x', notice_files=[]) for id in parsed])
+                with patch.object(jisyo, 'write_export', lambda output, records, *_: list(records)):
+                    def nasi(ids):
+                        return [s for kind, key, s in jisyo.export_skk_tsv(ids, root/'x') if key == 'かんじ']
+                    self.assertEqual(nasi(None), ['監事', '漢字', '感じ', '幹事', '冠辞', '寛治', '患児', '患耳', 'かんじ'])
+                    self.assertEqual(nasi(['jmdict', 'jmnedict']), ['幹事', '漢字', '監事', '冠辞', '寛治', 'かんじ'])
+                    self.assertEqual(nasi(['jmed']), ['患児', '患耳'])
+                    self.assertEqual(nasi(None), nasi(None))
+                    self.assertEqual(jisyo.export(None, root/'m'), [('かか', '書か')] + [('かんじ', s) for s in sorted(
+                        ['監事', '漢字', '感じ', '幹事', '冠辞', '寛治', '患児', '患耳', 'かんじ'])])
+
+
 if __name__ == '__main__':
     unittest.main()

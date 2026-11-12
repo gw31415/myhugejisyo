@@ -16,7 +16,8 @@ Lisp式・送り仮名ブロック、未対応文字・空表記等を除外し�
 重複排除しました。SKKの送りあり項目とLisp式を含む行の通常候補はSKK出力だけに、
 Sudachiの活用形はRustMigemo出力だけに使いました。元の表記を保持し、編集用TSV、
 RustMigemo compact、UTF-8 SKKへ出力しました。SKKでは安全に表せないキー・候補をさらに
-除外し、送りありは見出し降順・出典順、送りなしは見出し昇順・候補辞書順です。
+除外し、送りありは見出し降順・出典順、送りなしは見出し昇順で、候補はSKK-JISYO.Lの順を先頭に、
+残りを辞書内の信号（Sudachiコスト・JMdict優先度・出典別既定値）から推定した順に並べ替えました。
 JMEDは出現形・出現形よみだけを抽出し、外部医療コードを除外しました。
 同梱した原資料と上流告知は変更していません（JMED入力のみ語彙TSVへ置換）。
 変更は本プロジェクトによるもので、上流作者による変更・推奨・公認ではありません。'''
@@ -45,7 +46,7 @@ def release_identity(root, repository, tag, modifier, generated_at):
 def skk_headers(info, profile):
     return [f"License: {LICENSES[profile]}; original attribution/conditions retained in accompanying bundle.",
             f"Modified by {info['modifier']} at {info['generated_at']}; release {info['tag']}; profile {profile}.",
-            'Changes: extraction, normalization, filtering, merging, deduplication, reordering (okuri-ari by source), format conversion; see CHANGES.md.',
+            'Changes: extraction, normalization, filtering, merging, deduplication, reordering (okuri-ari by source; okuri-nasi by SKK-JISYO.L, then estimated cost), format conversion; see CHANGES.md.',
             f"Corresponding source: {info['corresponding_source_url']}"]
 
 
