@@ -11,10 +11,12 @@ from urllib.parse import quote
 LICENSES = {'all': 'GPL-3.0-only', 'core': 'GPL-3.0-only',
             'edrdg': 'CC-BY-SA-4.0', 'medical': 'CC-BY-4.0'}
 MODIFICATIONS = '''読みをNFKC・小文字・ひらがなへ正規化し、検索キーの区切り記号を除去しました。
-読みと表記を抽出し、JMdictの対応制限を適用しました。SKKの送りあり・注釈・特殊構文、
-未対応文字・空表記等を除外し、出典間の同じ読み・表記を統合・重複排除しました。
-元の表記を保持し、編集用TSV、RustMigemo compact、UTF-8 SKKへ出力しました。
-SKKでは安全に表せないキー・候補をさらに除外し、候補は辞書順です。
+読みと表記を抽出し、JMdictの対応制限を適用しました。SKKの注釈・数値テンプレート・
+Lisp式・送り仮名ブロック、未対応文字・空表記等を除外し、出典間の同じ読み・表記を統合・
+重複排除しました。SKKの送りあり項目とLisp式を含む行の通常候補はSKK出力だけに、
+Sudachiの活用形はRustMigemo出力だけに使いました。元の表記を保持し、編集用TSV、
+RustMigemo compact、UTF-8 SKKへ出力しました。SKKでは安全に表せないキー・候補をさらに
+除外し、送りありは見出し降順・出典順、送りなしは見出し昇順・候補辞書順です。
 JMEDは出現形・出現形よみだけを抽出し、外部医療コードを除外しました。
 同梱した原資料と上流告知は変更していません（JMED入力のみ語彙TSVへ置換）。
 変更は本プロジェクトによるもので、上流作者による変更・推奨・公認ではありません。'''
@@ -43,7 +45,7 @@ def release_identity(root, repository, tag, modifier, generated_at):
 def skk_headers(info, profile):
     return [f"License: {LICENSES[profile]}; original attribution/conditions retained in accompanying bundle.",
             f"Modified by {info['modifier']} at {info['generated_at']}; release {info['tag']}; profile {profile}.",
-            'Changes: extraction, normalization, filtering, merging, deduplication, format conversion; see CHANGES.md.',
+            'Changes: extraction, normalization, filtering, merging, deduplication, reordering (okuri-ari by source), format conversion; see CHANGES.md.',
             f"Corresponding source: {info['corresponding_source_url']}"]
 
 

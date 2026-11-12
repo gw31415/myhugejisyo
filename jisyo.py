@@ -10,6 +10,7 @@ import gzip
 import hashlib
 import html
 import io
+import itertools
 import json
 from pathlib import Path
 import re
@@ -175,26 +176,38 @@ def parse_skk(stream, stats):
             okuri = False
         if line.startswith(';') or not line.strip():
             continue
-        if okuri:
-            stats['skk_okuri_entry'] += 1
-            continue
         key, sep, rest = line.rstrip('\n').partition(' ')
         if not sep or not rest.startswith('/') or not rest.endswith('/'):
             stats['skk_malformed_entry'] += 1
             continue
-        # SKK numbers and okuri keys are templates, not literal readings.
-        if '#' in key or re.search('[ぁ-ゖー][a-z]$', key):
+        # SKK numbers are templates, not literal readings; okuri keys belong to the okuri-ari section.
+        if '#' in key or not okuri and re.search('[ぁ-ゖー][a-z]$', key):
             stats['skk_template_entry'] += 1
             continue
-        if '/(' in rest or '/[' in rest:
-            stats['skk_expression_entry'] += 1
+        if okuri and not re.search('[ぁ-ゖー][a-z]$', key):
+            stats['skk_malformed_entry'] += 1
             continue
+        if okuri:
+            stats['skk_okuri_entry'] += 1
+        # Lines with Lisp/okuri-block candidates keep their plain candidates for SKK only.
+        rescued = '/(' in rest or '/[' in rest
+        if rescued:
+            stats['skk_expression_entry'] += 1
+        depth, block = 0, False
         for candidate in rest[1:-1].split('/'):
+            if depth or candidate.startswith('('):
+                depth = max(depth + candidate.count('(') - candidate.count(')'), 0)
+                stats['skk_expression_candidate'] += 1
+                continue
+            if block or candidate.startswith('['):
+                block = candidate != ']'
+                stats['skk_expression_candidate'] += 1
+                continue
             surface = candidate.split(';', 1)[0]
             if not surface or surface.startswith(('(', '[', ']')) or '#' in surface:
                 stats['skk_special_candidate'] += 1
                 continue
-            yield Entry(key, surface, '')
+            yield Entry(key, surface, '', 'ari' if okuri else 'nasi', 'skk' if okuri or rescued else 'all')
 
 
 def parse_jmdict(stream, stats):
@@ -275,7 +288,10 @@ def rows(source, stats):
                     if len(row) < 18:
                         raise ValueError('Unexpected Sudachi CSV layout')
                     # Column 4 is original output surface; 0 is normalized trie key.
-                    yield Entry(unescape_sudachi(row[11]), unescape_sudachi(row[4]), '|'.join(row[5:11]), cost=int(row[3]))
+                    # Inflected forms (column 10) help Migemo but are not SKK okuri-nasi words.
+                    inflected = row[10] != '*' and not row[10].startswith('終止形')
+                    yield Entry(unescape_sudachi(row[11]), unescape_sudachi(row[4]), '|'.join(row[5:11]),
+                                scope='migemo' if inflected else 'all', cost=int(row[3]))
     elif fmt == 'jmdict':
         with gzip.open(path) as f:
             yield from parse_jmdict(f, stats)
@@ -350,8 +366,9 @@ def ingest(sources):
             report[source['id']] = dict(stats)
             con.commit()
             print(f"imported {source['id']}: {dict(stats)}", flush=True)
-        report['totals'] = dict(readings=con.execute('SELECT COUNT(DISTINCT reading) FROM entries').fetchone()[0],
-                                pairs=con.execute('SELECT COUNT(*) FROM (SELECT reading,surface FROM entries GROUP BY reading,surface)').fetchone()[0])
+        report['totals'] = dict(readings=con.execute("SELECT COUNT(DISTINCT reading) FROM entries WHERE kind='nasi'").fetchone()[0],
+                                pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='nasi' GROUP BY reading,surface)").fetchone()[0],
+                                okuri_ari_pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='ari' GROUP BY reading,surface)").fetchone()[0])
         con.close()
         tmp.replace(DB)
         write_json(ROOT / 'data/import-report.json', report)
@@ -433,11 +450,21 @@ def export(ids, output):
 def export_skk_tsv(ids, output):
     """SKK input: kind TAB key TAB surface, already in final SKK line and candidate order."""
     con, sources, selected, where = selection(ids)
+    # okuri-ari: keys descending; candidates by source (skk-l, then catalog order), then rank in source.
+    order = {id: (id != 'skk-l', i) for i, (id,) in enumerate(con.execute('SELECT id FROM sources ORDER BY rowid'))}
+    ari = {}
+    for key, surface, source, rank in con.execute('SELECT reading,surface,source,rank FROM entries' + where
+                                                  + " AND kind='ari' AND scope IN ('all','skk')", selected):
+        best = ari.setdefault(key, {})
+        best[surface] = min(best.get(surface, (order[source], rank)), (order[source], rank))
     query = ("SELECT 'nasi',reading,surface FROM entries" + where + " AND kind='nasi' AND scope IN ('all','skk')"
              ' GROUP BY reading,surface ORDER BY reading,surface')
+    records = itertools.chain((('ari', key, surface) for key in sorted(ari, reverse=True)
+                               for surface in sorted(ari[key], key=ari[key].get)),
+                              con.execute(query, selected))
     try:
-        return write_export(output, con.execute(query, selected), sources, selected,
-                            'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-nasi candidates lexical; normalization as the RustMigemo TSV')
+        return write_export(output, records, sources, selected,
+                            'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with candidates by source then source order; okuri-nasi keys and candidates ascending; normalization as the RustMigemo TSV')
     finally:
         con.close()
 
@@ -500,8 +527,8 @@ def export_skk(tsv, output, release_headers=()):
         raise
     tmp.replace(output)
     manifest = json.loads(Path(str(tsv) + '.manifest.json').read_text())
-    manifest.update(format='SKK UTF-8 okuri-nasi supplement', skk=dict(stats),
-                    sha256=digest(output), candidate_order='lexical; use after personal/base SKK dictionaries',
+    manifest.update(format='SKK UTF-8 supplement with okuri-ari and okuri-nasi sections', skk=dict(stats),
+                    sha256=digest(output), candidate_order='okuri-ari: skk-l first, then other sources in catalog order, each in source order; okuri-nasi: lexical; use after personal/base SKK dictionaries',
                     exclusions='unrepresentable plain SKK keys/candidates omitted; no Lisp expressions emitted')
     write_json(str(output) + '.manifest.json', manifest)
     print(f"exported SKK: {dict(stats)}", flush=True)
