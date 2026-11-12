@@ -42,7 +42,7 @@ def db_keys(db, sources):
     meta = {s['id']: s['format'] for s in metadata}
     selected = sorted(sources or meta)
     skk_sources = {i for i in selected if meta[i] == 'skk'}
-    query = ('SELECT reading,surface,source,rank,cost,pri,original_reading FROM entries WHERE source IN (' + ','.join('?' * len(selected))
+    query = ('SELECT reading,surface,source,rank,cost,pri,original_reading,inf FROM entries WHERE source IN (' + ','.join('?' * len(selected))
              + ") AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
     groups = itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
     try:

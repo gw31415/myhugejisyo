@@ -73,9 +73,11 @@ def archive_sources(output, sources, stage, profiles):
     selected = sorted(s['id'] for s in sources)
     with closing(sqlite3.connect(f'file:{jisyo.DB}?mode=ro', uri=True)) as db, (stage/'provenance.tsv').open('w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f, delimiter='\t', lineterminator='\n')
-        writer.writerow(['reading', 'surface', 'source', 'original_reading', 'kind', 'scope'])
-        query = 'SELECT reading,surface,source,original_reading,kind,scope FROM entries WHERE source IN (' + ','.join('?' for _ in selected) + ') ORDER BY reading,surface,source,kind'
-        writer.writerows(db.execute(query, selected))
+        # confidence: upstream-provided, or rule-generated okuri-ari pairs whose rule (class|dictionary reading|surface) follows.
+        writer.writerow(['reading', 'surface', 'source', 'original_reading', 'kind', 'scope', 'confidence', 'rule'])
+        query = ("SELECT reading,surface,source,original_reading,kind,scope,confidence,CASE WHEN confidence=? THEN pos ELSE '' END FROM entries"
+                 ' WHERE source IN (' + ','.join('?' for _ in selected) + ') ORDER BY reading,surface,source,kind')
+        writer.writerows(db.execute(query, [jisyo.GENERATED, *selected]))
     vendor = stage/'vendor'
     config = subprocess.check_output(['cargo', 'vendor', '--locked', str(vendor)], cwd=ROOT, text=True)
     # Cargo emits an absolute path; source archive must remain relocatable.

@@ -29,12 +29,44 @@ CACHE = ROOT / 'data/raw'
 LOCK = ROOT / 'sources.lock.json'
 DB = ROOT / 'data/lexicon.sqlite3'
 KATAKANA, KANA = re.compile('[ァ-ヺー・ヽヾ]+'), re.compile('[ぁ-ゖァ-ヺー・ゝゞヽヾ]+')
+KANA_CHAR = re.compile('[ぁ-ゖァ-ヺーゝゞヽヾ]')
 READING_SEPARATORS = str.maketrans('', '', '・、。「」【】')
 NS = {'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
-# kind: SKK okuri-nasi/okuri-ari; scope: all, skk-only or migemo-only; cost: Sudachi; pri: JMdict priority tags.
-Entry = namedtuple('Entry', 'reading surface pos kind scope cost pri', defaults=('nasi', 'all', None, None))
+# kind: SKK okuri-nasi/okuri-ari; scope: all, skk-only or migemo-only; cost: Sudachi; pri: JMdict priority tags;
+# inf: JMdict ke_inf/re_inf codes; confidence: 'rule-generated' for okuri-ari entries derived by OKURI rules below.
+Entry = namedtuple('Entry', 'reading surface pos kind scope cost pri inf confidence',
+                   defaults=('nasi', 'all', None, None, None, 'upstream-provided'))
 # Formats that only rank candidates: stored in the costs table, never in entries/exports as vocabulary.
 RANKING_FORMATS = {'mozc'}
+GENERATED = 'rule-generated'
+# JMdict form tags: search-only forms stay in RustMigemo only; irregular/rare/outdated forms are demoted in SKK order.
+SEARCH_ONLY, IRREGULAR = {'sK', 'sk'}, {'iK', 'ik', 'oK', 'ok', 'rK', 'rk'}
+# SKK okuri letter(s) of the first okurigana kana, as measured on SKK-JISYO.L (scripts/eval_okuri.py): L files っ under both
+# t and c (かt/かc 買った) and じ under both j and z (かんj/かんz 感じる); small kana and ー cannot start okurigana.
+OKURI_LETTERS = {kana: letters for row, letters in zip(
+    ['あ', 'い', 'う', 'え', 'お', 'かきくけこ', 'がぎぐげご', 'さしすせそ', 'ざずぜぞ', 'じ', 'たちつてと', 'だぢづでど', 'なにぬねの',
+     'はひふへほ', 'ばびぶべぼ', 'ぱぴぷぺぽ', 'まみむめも', 'やゆよ', 'らりるれろ', 'わゐゑを', 'ん', 'っ', 'ゔ'],
+    'a i u e o k g s z jz t d n h b p m y r w n tc v'.split()) for kana in row}
+# Sudachi 活用型 whose inflected rows yield okuri-ari entries (modern verbs and adjectives; classical 文語 types excluded).
+SUDACHI_OKURI = re.compile('(五段|上一段|下一段)-.+行|サ行変格|カ行変格|形容詞')
+# JMdict class -> (dictionary-form ending, replacements forming 未然/連用/終止/仮定/命令/意志 forms incl. 音便; a bare
+# 一段/カ変 stem is followed by the auxiliaries た/て/な/ま/ら/よ). Classes not listed generate nothing.
+JMDICT_OKURI = {
+    'v5k': ('く', 'か き く け こ い'), 'v5k-s': ('く', 'か き く け こ っ'), 'v5g': ('ぐ', 'が ぎ ぐ げ ご い'),
+    'v5s': ('す', 'さ し す せ そ'), 'v5t': ('つ', 'た ち つ て と っ'), 'v5n': ('ぬ', 'な に ぬ ね の ん'),
+    'v5b': ('ぶ', 'ば び ぶ べ ぼ ん'), 'v5m': ('む', 'ま み む め も ん'), 'v5r': ('る', 'ら り る れ ろ っ ん'),
+    'v5r-i': ('る', 'ら り る れ ろ っ'), 'v5aru': ('る', 'ら り る れ ろ っ い'), 'v5u': ('う', 'わ い う え お っ'),
+    'v5u-s': ('う', 'わ い う え お'), 'v1': ('る', 'る れ ろ よ た て な ま ら'), 'v1-s': ('る', 'る れ ろ よ た て な ま ら'),
+    'vz': ('ずる', 'ずる ずれ じ ぜ'), 'vs-s': ('する', 'さ し す せ'), 'vs-c': ('す', 'さ し す せ そ'),
+    # 来る: the kanji also covers the stem vowel change く/き/こ.
+    'vk': ('くる', 'くる くれ こい こよ きた きて こな きま こら'),
+    # 高さ/高そう/高すぎ: L files the stem under s as well.
+    'adj-i': ('い', 'い く かっ けれ き かろ さ'), 'adj-ix': ('い', 'い く かっ けれ き かろ さ'),
+}
+# Classes SKK-JISYO.L contradicts: the 95% Wilson upper bound of their precision on L keys is below 0.9
+# (scripts/eval_okuri.py --all-classes): Sudachi サ行変格 0.83 (rare one-kanji 漢語 verbs 乖する, 箝する), 下一段-タ行 0.82,
+# 上一段-ハ行 1/6; JMdict vs-c 0.71 (classical 会す, 嚇す).
+OKURI_EXCLUDED = {'サ行変格', '下一段-タ行', '上一段-ハ行', 'vs-c'}
 
 
 def request(url):
@@ -219,15 +251,38 @@ def parse_skk(stream, stats):
             yield Entry(key, surface, '', 'ari' if okuri else 'nasi', 'skk' if okuri or rescued else 'all')
 
 
+class Prefixed:
+    """Byte stream that replays an already read prefix."""
+    def __init__(self, prefix, stream):
+        self.prefix, self.stream = prefix, stream
+
+    def read(self, size=-1):
+        if self.prefix:
+            data, self.prefix = self.prefix, b''
+            return data
+        return self.stream.read(size)
+
+
 def parse_jmdict(stream, stats):
-    events = ET.iterparse(stream, events=('start', 'end'))
+    # The DTD maps entity names (v5k, sK) to the texts ElementTree expands them to; keep the codes for classes and tags.
+    prefix = b''
+    while b']>' not in prefix and (line := stream.readline()):
+        prefix += line
+    codes = {}
+    for name, text in re.findall(r'<!ENTITY\s+(\S+)\s+"([^"]*)">', prefix.decode('utf-8', 'replace')):
+        codes.setdefault(html.unescape(text), name)
+    events = ET.iterparse(Prefixed(prefix, stream), events=('start', 'end'))
     _, root = next(events)
     for event, entry in events:
         if event != 'end' or entry.tag != 'entry':
             continue
         kanji = {k.findtext('keb'): {p.text for p in k.findall('ke_pri')} for k in entry.findall('k_ele')}
+        kanji_inf = {k.findtext('keb'): {codes.get(i.text, i.text) for i in k.findall('ke_inf')} for k in entry.findall('k_ele')}
         forms = list(kanji)
         pos = '|'.join(sorted({p.text for p in entry.findall('sense/pos') + entry.findall('trans/name_type') if p.text}))
+        codes_pos = {codes.get(p.text) for p in entry.findall('sense/pos')}
+        # Expressions (気が付く, 人当たりがいい) are phrases, not words SKK files under okuri-ari keys.
+        classes = [] if 'exp' in codes_pos else sorted(codes_pos & JMDICT_OKURI.keys())
         for reading in entry.findall('r_ele'):
             key = reading.findtext('reb', '')
             restricted = [r.text for r in reading.findall('re_restr')]
@@ -236,12 +291,26 @@ def parse_jmdict(stream, stats):
             else:
                 values = [s for s in forms if not restricted or s in restricted]
             tags = {p.text for p in reading.findall('re_pri')}
+            reading_inf = {codes.get(i.text, i.text) for i in reading.findall('re_inf')}
             for surface in values:
                 # A kanji form gets the tags its ke_pri shares with this reading's re_pri: 客 is news1 as きゃく, not as かく.
                 # A katakana reading's re_pri stays; candidate_rows moves it to that loanword spelling.
                 own = kanji.get(surface, set())
-                pri = own | tags if surface not in kanji or KATAKANA.fullmatch(key) else own & tags
-                yield Entry(key, surface, pos, pri='|'.join(sorted(pri)) or None)
+                pri = '|'.join(sorted(own | tags if surface not in kanji or KATAKANA.fullmatch(key) else own & tags)) or None
+                inf = reading_inf | kanji_inf.get(surface, set())
+                # Search-only forms (sK kanji, sk kana) help RustMigemo but are not SKK candidates.
+                search_only = bool(inf & SEARCH_ONLY)
+                stats['jmdict_search_only_pair'] += search_only
+                yield Entry(key, surface, pos, scope='migemo' if search_only else 'all', pri=pri, inf='|'.join(sorted(inf)) or None)
+                # Okuri-ari entries only from the headword spelling or a spelling with its own priority tags, never from
+                # forms tagged irregular/rare/outdated: other variants are mostly spellings SKK-JISYO.L does not use.
+                if search_only or inf & IRREGULAR or not forms or surface != forms[0] and not own:
+                    continue
+                for code in classes:
+                    for okuri, stem in jmdict_okuri(surface, key, code):
+                        stats['okuri_generated'] += 1
+                        yield Entry(okuri, stem, f'okuri-rule|{code}|{key}|{surface}', 'ari', 'skk', pri=pri,
+                                    inf='|'.join(sorted(inf)) or None, confidence=GENERATED)
         root.clear()
 
 
@@ -283,6 +352,94 @@ def unescape_sudachi(text):
                   lambda m: chr(int(m[1].strip('{}'), 16)), text)
 
 
+def hiragana(text):
+    return ''.join(chr(ord(c) - 0x60) if 'ァ' <= c <= 'ヶ' else c for c in text)
+
+
+def okuri_split(surface, reading):
+    """(stem reading, stem, okurigana) of an inflected form: the stem ends with its last non-kana character (normally
+    kanji) and the trailing kana must end the reading; None without okurigana, for all-kana words or misaligned kana."""
+    i = len(surface)
+    while i and KANA_CHAR.fullmatch(surface[i - 1]):
+        i -= 1
+    stem, okurigana, reading = surface[:i], hiragana(surface[i:]), hiragana(reading)
+    if (not stem or not okurigana or unicodedata.category(stem[-1]) not in ('Lo', 'Lm') or KANA_CHAR.fullmatch(stem[0])
+            or not reading.endswith(okurigana) or not re.fullmatch('[ぁ-ゖー]+', reading[:-len(okurigana)])):
+        return None
+    stem_reading = reading[:-len(okurigana)]
+    # Kana inside the stem (取り扱) must appear in its reading: kanji runs match one or more kana.
+    parts = re.split('([ぁ-ゖァ-ヺーゝゞヽヾ]+)', stem)
+    if len(parts) > 1 and not re.fullmatch(''.join(re.escape(hiragana(p)) if i % 2 else '.+' for i, p in enumerate(parts) if p),
+                                           stem_reading):
+        return None
+    return stem_reading, stem, okurigana
+
+
+def okuri_letters(okurigana):
+    """SKK okuri letters: those of the first kana; a sokuon takes the next kana's (酸っぱ -> p), a final one (買っ+た) t and c."""
+    if okurigana[0] == 'っ' and len(okurigana) > 1:
+        return OKURI_LETTERS.get(okurigana[1], '')
+    return OKURI_LETTERS.get(okurigana[0], '')
+
+
+def okuri_keys(surface, reading):
+    """SKK okuri-ari (key, candidate) pairs of one inflected form: 書か/かか -> [('かk', '書')], 買っ/かっ -> かt, かc."""
+    split = okuri_split(surface, reading)
+    return [(split[0] + letter, split[1]) for letter in okuri_letters(split[2])] if split else []
+
+
+def jmdict_okuri(surface, reading, code):
+    """Okuri-ari pairs of a JMdict dictionary form, inflected by its JMDICT_OKURI class table."""
+    if code not in JMDICT_OKURI or code in OKURI_EXCLUDED:
+        return []
+    ending, replacements = JMDICT_OKURI[code]
+    if code == 'adj-ix' and reading.endswith('いい'):
+        replacements = 'い'
+    elif code == 'v5k-s' and not reading.endswith('いく'):
+        replacements = replacements.replace('っ', '')  # 行った is いった, never ゆった
+    if not reading.endswith(ending):
+        return []
+    # Trailing kana of the ending written in the surface; the rest (く of 来る) is covered by the kanji.
+    written = next(n for n in range(len(ending), -1, -1) if surface.endswith(ending[len(ending) - n:]))
+    covered = len(ending) - written
+    pairs = []
+    for replacement in replacements.split():
+        for pair in okuri_keys(surface[:len(surface) - written] + replacement[covered:], reading[:-len(ending)] + replacement):
+            if pair not in pairs:
+                pairs.append(pair)
+    return pairs
+
+
+def sudachi_okuri(lemmas, stats):
+    """Okuri-ari entries from Sudachi verb/adjective rows grouped by lemma (column 13, dictionary form id):
+    {id: [(活用型, 活用形, normalized form, surface, reading, cost, (stem reading, stem, okurigana))]}. A lemma counts only with
+    its canonical dictionary form (終止形-一般 row spelled as the normalized form, column 12), and every form must keep that
+    form's stem and stem reading (カ変 excepted for the reading), so okurigana-omitted or variant spellings (乏い, 取越す,
+    観る, 止どめる) and colloquial stems (大っきい) are skipped."""
+    best = {}
+    for lemma, rows in sorted(lemmas.items()):
+        bases = sorted((cost, split, search_key(reading), surface, conjugation) for conjugation, form, normalized, surface, reading, cost, split in rows
+                       if form == '終止形-一般' and surface == normalized)
+        if not bases:
+            stats['okuri_skipped_lemma'] += 1
+            continue
+        cost, (base_reading, stem, _), reading, surface, conjugation = bases[0]
+        for _, form, _, _, _, _, split in rows:
+            if split[1] != stem or split[0] != base_reading and conjugation != 'カ行変格':
+                stats['okuri_skipped_form'] += 1
+                continue
+            # Classical/polite adjective ウ音便 (高う, 早う) is not filed under u in SKK-JISYO.L.
+            if form == '連用形-ウ音便' and conjugation == '形容詞':
+                continue
+            for letter in okuri_letters(split[2]):
+                value = (cost, reading, surface, conjugation)
+                key = (split[0] + letter, stem)
+                best[key] = min(best.get(key, value), value)
+    for (key, stem), (cost, reading, surface, conjugation) in sorted(best.items()):
+        stats['okuri_generated'] += 1
+        yield Entry(key, stem, f'okuri-rule|{conjugation}|{reading}|{surface}', 'ari', 'skk', cost, confidence=GENERATED)
+
+
 def rows(source, stats):
     path = CACHE / source['id'] / 'source'
     if digest(path) != source['sha256']:
@@ -296,6 +453,7 @@ def rows(source, stats):
             members = [n for n in archive.namelist() if n.endswith('_lex.csv')]
             if len(members) != 1:
                 raise ValueError('Unexpected Sudachi archive members')
+            lemmas = {}
             with archive.open(members[0]) as raw:
                 for row in csv.reader(io.TextIOWrapper(raw, encoding='utf-8')):
                     if len(row) < 18:
@@ -303,8 +461,14 @@ def rows(source, stats):
                     # Column 4 is original output surface; 0 is normalized trie key.
                     # Inflected forms (column 10) help Migemo but are not SKK okuri-nasi words.
                     inflected = row[10] != '*' and not row[10].startswith('終止形')
-                    yield Entry(unescape_sudachi(row[11]), unescape_sudachi(row[4]), '|'.join(row[5:11]),
-                                scope='migemo' if inflected else 'all', cost=int(row[3]))
+                    reading, surface = unescape_sudachi(row[11]), unescape_sudachi(row[4])
+                    yield Entry(reading, surface, '|'.join(row[5:11]), scope='migemo' if inflected else 'all', cost=int(row[3]))
+                    # Each inflected verb/adjective row (column 9: 活用型) is also split into an okuri-ari key.
+                    split = (row[5] in ('動詞', '形容詞') and row[13] != '*' and SUDACHI_OKURI.fullmatch(row[9])
+                             and row[9] not in OKURI_EXCLUDED and okuri_split(surface, reading))
+                    if split:
+                        lemmas.setdefault(row[13], []).append((row[9], row[10], unescape_sudachi(row[12]), surface, reading, int(row[3]), split))
+            yield from sudachi_okuri(lemmas, stats)
     elif fmt == 'mozc':
         # reading, left id, right id, cost, surface[, flag]; flagged rows (SPELLING_CORRECTION) have misspelled readings.
         with path.open(encoding='utf-8', newline='') as f:
@@ -346,22 +510,27 @@ def ingest(sources):
     tmp = DB.with_suffix('.tmp')
     tmp.unlink(missing_ok=True)
     con = sqlite3.connect(tmp)
+    con.create_function('common_tags', 2, lambda a, b: a and b and '|'.join(sorted(set(a.split('|')) & set(b.split('|')))) or None,
+                        deterministic=True)
     con.executescript('''
       PRAGMA journal_mode=OFF;
       PRAGMA cache_size=-131072;
       CREATE TABLE sources(id TEXT PRIMARY KEY, metadata TEXT NOT NULL);
       CREATE TABLE entries(reading TEXT, surface TEXT, source TEXT, kind TEXT NOT NULL CHECK(kind IN ('nasi','ari')),
         scope TEXT NOT NULL CHECK(scope IN ('all','skk','migemo')), rank INTEGER NOT NULL, cost INTEGER, pri TEXT,
-        pos TEXT, original_reading TEXT, confidence TEXT NOT NULL DEFAULT 'upstream-provided',
+        pos TEXT, original_reading TEXT, confidence TEXT NOT NULL DEFAULT 'upstream-provided', inf TEXT,
         PRIMARY KEY(reading,surface,source,kind)) WITHOUT ROWID;
       CREATE TABLE costs(reading TEXT, surface TEXT, source TEXT, cost INTEGER NOT NULL,
         PRIMARY KEY(reading,surface,source)) WITHOUT ROWID;
     ''')
-    # Repeated keys within a source keep the first rank/pos/reading, the lowest cost and the widest scope.
-    insert = '''INSERT INTO entries(reading,surface,source,kind,scope,rank,cost,pri,pos,original_reading) VALUES (?,?,?,?,?,?,?,?,?,?)
+    # Repeated keys within a source keep the first rank/pos/reading, the lowest cost and the widest scope; JMdict form tags
+    # (inf) keep only the tags every occurrence has, so a pair is demoted only if all its JMdict rows are irregular.
+    insert = '''INSERT INTO entries(reading,surface,source,kind,scope,rank,cost,pri,pos,original_reading,inf,confidence)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(reading,surface,source,kind) DO UPDATE SET rank=min(rank,excluded.rank),
         scope=CASE WHEN scope=excluded.scope THEN scope ELSE 'all' END,
-        cost=coalesce(min(cost,excluded.cost),cost,excluded.cost), pri=coalesce(pri,excluded.pri)'''
+        cost=coalesce(min(cost,excluded.cost),cost,excluded.cost), pri=coalesce(pri,excluded.pri),
+        inf=common_tags(inf,excluded.inf)'''
     # Ranking-only sources (Mozc): lowest cost per normalized reading/surface, e.g. over Mozc's POS ids.
     insert_cost = '''INSERT INTO costs VALUES (?,?,?,?) ON CONFLICT(reading,surface,source) DO UPDATE SET cost=min(cost,excluded.cost)'''
     report = {}
@@ -372,7 +541,7 @@ def ingest(sources):
             ranking = source.get('format') in RANKING_FORMATS
             table, statement = ('costs', insert_cost) if ranking else ('entries', insert)
             batch = []
-            for rank, (reading, surface, pos, kind, scope, cost, pri) in enumerate(rows(source, stats)):
+            for rank, (reading, surface, pos, kind, scope, cost, pri, inf, confidence) in enumerate(rows(source, stats)):
                 stats['parsed_pairs'] += 1
                 original_reading = reading
                 normalized = normalize(reading)
@@ -386,12 +555,15 @@ def ingest(sources):
                     stats['invalid_surface'] += 1
                     continue
                 batch.append((reading, surface, source['id'], cost) if ranking else
-                             (reading, surface, source['id'], kind, scope, rank, cost, pri, pos, original_reading))
+                             (reading, surface, source['id'], kind, scope, rank, cost, pri, pos, original_reading, inf, confidence))
                 if len(batch) >= 10000:
                     con.executemany(statement, batch)
                     batch.clear()
             con.executemany(statement, batch)
             stats['unique_source_pairs'] = con.execute(f'SELECT COUNT(*) FROM {table} WHERE source=?', (source['id'],)).fetchone()[0]
+            generated = con.execute('SELECT COUNT(*) FROM entries WHERE source=? AND confidence=?', (source['id'], GENERATED)).fetchone()[0]
+            if generated:
+                stats['okuri_generated_unique_pairs'] = generated
             if not stats['unique_source_pairs']:
                 raise ValueError(f"{source['id']} produced no vocabulary")
             report[source['id']] = dict(stats)
@@ -400,6 +572,8 @@ def ingest(sources):
         report['totals'] = dict(readings=con.execute("SELECT COUNT(DISTINCT reading) FROM entries WHERE kind='nasi'").fetchone()[0],
                                 pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='nasi' GROUP BY reading,surface)").fetchone()[0],
                                 okuri_ari_pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='ari' GROUP BY reading,surface)").fetchone()[0],
+                                okuri_ari_generated_only_pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='ari' "
+                                                                           f"GROUP BY reading,surface HAVING max(confidence)='{GENERATED}')").fetchone()[0],
                                 ranking_pairs=con.execute('SELECT COUNT(*) FROM (SELECT reading,surface FROM costs GROUP BY reading,surface)').fetchone()[0])
         con.close()
         tmp.replace(DB)
@@ -423,7 +597,7 @@ def selection(ids):
     return con, sources, sorted(selected), ' WHERE source IN (' + ','.join('?' for _ in selected) + ')'
 
 
-def write_export(output, records, sources, selected, transformation):
+def write_export(output, records, sources, selected, transformation, extra=None):
     """Write TAB-separated records atomically, then the manifest and upstream notices."""
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -438,7 +612,7 @@ def write_export(output, records, sources, selected, transformation):
         raise ValueError('No pairs selected')
     tmp.replace(output)
     manifest = dict(pairs=count, sha256=digest(output), sources=[s for s in sources if s['id'] in selected],
-                    transformation=transformation)
+                    transformation=transformation, **(extra or {}))
     write_json(str(output) + '.manifest.json', manifest)
     notices = output.parent / (output.name + '.notices')
     notices.mkdir(exist_ok=True)
@@ -503,6 +677,8 @@ DEFAULT_COST = dict.fromkeys(['jmdict', 'skk-hukugougo', 'skk-law', 'skk-jis2004
     'jmnedict': 15000, 'jawiki': 16000, 'jmed': 17000}
 # Unevidenced katakana transliterations of the key go after every other non-ASCII candidate, before ASCII.
 OTHER_COST, TRANSLITERATION_COST, ASCII_COST = 18000, 19000, 20000
+# Forms JMdict tags only as irregular/rare/outdated (IRREGULAR) go after every source default (incl. jmed), before OTHER_COST.
+IRREGULAR_COST = 17500
 
 
 def pri_cost(pri):
@@ -523,15 +699,15 @@ def mozc_cost(cost):
 
 def signal_cost(surface, rows):
     """Pseudo-cost: Mozc cost when present, else sudachi-small cost or JMdict priority; None without such a signal."""
-    mozc = [mozc_cost(cost) for source, _, cost, _ in rows if source == 'mozc' and plausible_mozc(surface, cost)]
+    mozc = [mozc_cost(cost) for source, _, cost, *_ in rows if source == 'mozc' and plausible_mozc(surface, cost)]
     if mozc:
         return min(mozc)
-    signals = [pri_cost(pri) for source, _, _, pri in rows if source == 'jmdict' and pri]
+    signals = [pri_cost(pri) for source, _, _, pri, *_ in rows if source == 'jmdict' and pri]
     # Cost 0 marks irregular variants (ゐざる, たゝく), not frequent words; untagged katakana is shifted.
     shift = KATAKANA_SHIFT if not signals and KATAKANA.fullmatch(surface) else 0
-    signals += [cost + shift for source, _, cost, _ in rows if source == 'sudachi-small' and cost]
+    signals += [cost + shift for source, _, cost, *_ in rows if source == 'sudachi-small' and cost]
     # Selected Mozc lacks the word (rows ('mozc', 0, None, None)): rarer than its other signals suggest.
-    absent = MOZC_ABSENT_SHIFT if any(source == 'mozc' for source, _, _, _ in rows) else 0
+    absent = MOZC_ABSENT_SHIFT if any(row[0] == 'mozc' for row in rows) else 0
     return min(signals) + absent if signals else None
 
 
@@ -539,46 +715,55 @@ def plausible_mozc(surface, cost):
     return cost is not None and (cost >= MOZC_KANA_FLOOR or not KANA.fullmatch(surface))
 
 
+def irregular(rows):
+    """Every JMdict row of the candidate is tagged irregular/rare/outdated (iK, oK, rK, ik, ok, rk)."""
+    flags = [row[4] for row in rows if row[0] == 'jmdict' and len(row) > 4]
+    return bool(flags) and all(flags)
+
+
 def candidate_order(key, surface, rows, skk_sources=()):
-    """Sort key of one okuri-nasi candidate; rows: (source, rank, cost, pri) of every source providing it."""
-    ranks = [rank for source, rank, _, _ in rows if source == 'skk-l']
+    """Sort key of one candidate; rows: (source, rank, cost, pri[, irregular]) of every source providing it."""
+    ranks = [rank for source, rank, *_ in rows if source == 'skk-l']
     if ranks:
         return (0, min(ranks))
     cost, tie = signal_cost(surface, rows), ('', 0)
     if cost is None:
-        cost, source, rank = min((DEFAULT_COST.get(source, OTHER_COST), source, rank) for source, rank, _, _ in rows if source != 'mozc')
+        cost, source, rank = min((DEFAULT_COST.get(source, OTHER_COST), source, rank) for source, rank, *_ in rows if source != 'mozc')
         tie = (source, rank if source in skk_sources else 0)
+    if irregular(rows):
+        cost = max(cost, IRREGULAR_COST)
     if surface.isascii() and not key.isascii():
         cost = max(cost, ASCII_COST)
     elif transliteration(key, surface, rows):
         cost = max(cost, TRANSLITERATION_COST)
     # The kana spelling identical to the key goes last: SKK confirms it without conversion.
     # Ties: more source families (skk, sudachi, jmdict, ...) first, then SKK source order, then code points.
-    families = len({source.split('-')[0] for source, _, _, _ in rows if source != 'mozc'})
+    families = len({row[0].split('-')[0] for row in rows if row[0] != 'mozc'})
     return (1 + (surface == key and not key.isascii()), cost, -families, *tie, surface)
 
 
 def transliteration(key, surface, rows):
     """Katakana spelling of the key (トクズ for とくず) without JMdict or plausible Mozc evidence of being a word."""
     return bool(KATAKANA.fullmatch(surface)) and search_key(surface) == key and not any(
-        source == 'jmdict' or source == 'mozc' and plausible_mozc(surface, cost) for source, _, cost, _ in rows)
+        source == 'jmdict' or source == 'mozc' and plausible_mozc(surface, cost) for source, _, cost, *_ in rows)
 
 
 def candidate_rows(rows, mozc=None):
-    """{surface: [(source, rank, cost, pri)]} from rows (surface, source, rank, cost, pri[, original_reading]);
-    mozc: {surface: cost} of the key, attached as ('mozc', 0, cost, None) to existing candidates only."""
+    """{surface: [(source, rank, cost, pri, irregular)]} from rows (surface, source, rank, cost, pri[, original_reading[, inf]]);
+    mozc: {surface: cost} of the key, attached as ('mozc', 0, cost, None, False) to existing candidates only."""
     rows = list(rows)
     by_surface = {row[0]: [] for row in rows}
-    for surface, source, rank, cost, pri, *original in rows:
+    for surface, source, rank, cost, pri, *extra in rows:
+        original, inf = (extra + [None, None])[:2]
         # A JMdict katakana reading marks a loanword: its priority belongs to that spelling, not to ateji like 珈琲.
-        if (source == 'jmdict' and pri and original and original[0] != surface and original[0] in by_surface
-                and KATAKANA.fullmatch(original[0])):
-            by_surface[original[0]].append((source, rank, None, pri))
+        if (source == 'jmdict' and pri and original and original != surface and original in by_surface
+                and KATAKANA.fullmatch(original)):
+            by_surface[original].append((source, rank, None, pri, False))
             pri = None
-        by_surface[surface].append((source, rank, cost, pri))
+        by_surface[surface].append((source, rank, cost, pri, bool(inf and IRREGULAR & set(inf.split('|')))))
     if mozc is not None:
         for surface, values in by_surface.items():
-            values.append(('mozc', 0, mozc.get(surface), None))
+            values.append(('mozc', 0, mozc.get(surface), None, False))
     return by_surface
 
 
@@ -588,15 +773,43 @@ def nasi_candidates(key, rows, skk_sources=(), mozc=None):
     return sorted(by_surface, key=lambda s: candidate_order(key, s, by_surface[s], skk_sources))
 
 
+def ari_candidates(key, rows, order, mozc=None):
+    """Candidates of one okuri-ari key in output order; rows: (surface, source, rank, cost, pri, inf, confidence, base), base the
+    dictionary form (reading, surface) of a generated row; order: {source: catalog position, skk-l first}; mozc: {base: cost},
+    None when no Mozc is selected. Upstream SKK candidates keep source then source order (skk-l = SKK-JISYO.L first);
+    rule-generated ones follow by the okuri-nasi cost of their dictionary forms."""
+    upstream, generated = {}, {}
+    for surface, source, rank, cost, pri, inf, confidence, base in rows:
+        if confidence != GENERATED:
+            upstream[surface] = min(upstream.get(surface, (order[source], rank)), (order[source], rank))
+            continue
+        values = generated.setdefault(surface, [])
+        values.append((source, rank, cost, pri, bool(inf and IRREGULAR & set(inf.split('|')))))
+        if mozc is not None:
+            values.append(('mozc', 0, mozc.get(base), None, False))
+    ranked = sorted(upstream, key=upstream.get)
+    return ranked + sorted(set(generated) - set(upstream), key=lambda s: candidate_order(key, s, generated[s]))
+
+
+def okuri_base(pos):
+    """Dictionary form (reading, surface) recorded in the pos of a rule-generated okuri-ari row."""
+    _, _, reading, surface = pos.split('|', 3)
+    return search_key(reading), surface
+
+
 def ranking_costs(con, sources, selected):
     """Stream (reading, {surface: lowest cost}) of the selected ranking-only sources, in reading order."""
-    ids = [s['id'] for s in sources if s['id'] in selected and s.get('format') in RANKING_FORMATS]
+    ids = ranking_ids(sources, selected)
     if not ids:
         return iter(())
     query = ('SELECT reading,surface,min(cost) FROM costs WHERE source IN (' + ','.join('?' * len(ids))
              + ') GROUP BY reading,surface ORDER BY reading,surface')
     return ((key, {surface: cost for _, surface, cost in rows})
             for key, rows in itertools.groupby(con.execute(query, ids), key=lambda row: row[0]))
+
+
+def ranking_ids(sources, selected):
+    return [s['id'] for s in sources if s['id'] in selected and s.get('format') in RANKING_FORMATS]
 
 
 def join_costs(groups, costs):
@@ -612,28 +825,45 @@ def join_costs(groups, costs):
 def export_skk_tsv(ids, output):
     """SKK input: kind TAB key TAB surface, already in final SKK line and candidate order."""
     con, sources, selected, where = selection(ids)
-    # okuri-ari: keys descending; candidates by source (skk-l, then catalog order), then rank in source.
+    # okuri-ari: keys descending; upstream candidates by source (skk-l, then catalog order), then rank in source;
+    # rule-generated candidates after them by estimated cost of their dictionary form.
     order = {id: (id != 'skk-l', i) for i, (id,) in enumerate(con.execute('SELECT id FROM sources ORDER BY rowid'))}
     ari = {}
-    for key, surface, source, rank in con.execute('SELECT reading,surface,source,rank FROM entries' + where
-                                                  + " AND kind='ari' AND scope IN ('all','skk')", selected):
-        best = ari.setdefault(key, {})
-        best[surface] = min(best.get(surface, (order[source], rank)), (order[source], rank))
+    for row in con.execute('SELECT reading,surface,source,rank,cost,pri,inf,confidence,pos FROM entries' + where
+                           + " AND kind='ari' AND scope IN ('all','skk') ORDER BY reading,surface,source", selected):
+        ari.setdefault(row[0], []).append(row[1:-1] + (okuri_base(row[-1]) if row[-2] == GENERATED else None,))
+    mozc, ranking = None, ranking_ids(sources, selected)
+    if ranking:
+        lookup = ('SELECT min(cost) FROM costs WHERE reading=? AND surface=? AND source IN (' + ','.join('?' * len(ranking)) + ')')
+        bases = sorted({row[-1] for rows in ari.values() for row in rows if row[-1]})
+        mozc = {base: con.execute(lookup, (*base, *ranking)).fetchone()[0] for base in bases}
+    # Candidate origins for the manifest: upstream SKK sources, or generated only (by Sudachi, JMdict or both).
+    origin = Counter()
+    for rows in ari.values():
+        kinds = {}
+        for surface, source, *_, confidence, _ in rows:
+            kinds.setdefault(surface, set()).add('skk' if confidence != GENERATED else source.split('-')[0])
+        origin['keys'] += 1
+        origin['keys_with_upstream'] += any('skk' in k for k in kinds.values())
+        for k in kinds.values():
+            origin['candidates_' + ('skk' if 'skk' in k else '+'.join(sorted(k)))] += 1
+    ari = {key: ari_candidates(key, rows, order, mozc) for key, rows in ari.items()}
     # okuri-nasi: keys ascending, streamed in primary-key order one key at a time.
     skk_sources = {s['id'] for s in sources if s.get('format') == 'skk'}
-    query = ('SELECT reading,surface,source,rank,cost,pri,original_reading FROM entries' + where
+    query = ('SELECT reading,surface,source,rank,cost,pri,original_reading,inf FROM entries' + where
              + " AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
     groups = itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
     # A second cursor streams Mozc costs alongside; candidates still come only from entries.
     nasi = (('nasi', key, surface) for key, rows, mozc in join_costs(groups, ranking_costs(con, sources, selected))
             for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources, mozc))
-    records = itertools.chain((('ari', key, surface) for key in sorted(ari, reverse=True)
-                               for surface in sorted(ari[key], key=ari[key].get)), nasi)
+    records = itertools.chain((('ari', key, surface) for key in sorted(ari, reverse=True) for surface in ari[key]), nasi)
     try:
         return write_export(output, records, sources, selected,
-                            'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with candidates by source then source order; '
+                            'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with upstream SKK candidates by source then source order, '
+                            'then rule-generated ones (Sudachi inflected forms / JMdict conjugation tables split into stem+okuri letter) by the estimated cost of their dictionary form; '
                             'okuri-nasi keys ascending with skk-l candidates first in SKK-JISYO.L order, then by estimated cost (Mozc OSS cost when selected and present, '
-                            'else sudachi-small cost/JMdict priority, source defaults); Mozc ranks only and adds no candidates; normalization as the RustMigemo TSV')
+                            'else sudachi-small cost/JMdict priority, source defaults; JMdict irregular/rare/outdated-only forms after source defaults; JMdict search-only forms excluded); '
+                            'Mozc ranks only and adds no candidates; normalization as the RustMigemo TSV', dict(okuri_ari=dict(sorted(origin.items()))))
     finally:
         con.close()
 
@@ -697,13 +927,15 @@ def export_skk(tsv, output, release_headers=()):
     tmp.replace(output)
     manifest = json.loads(Path(str(tsv) + '.manifest.json').read_text())
     manifest.update(format='SKK UTF-8 supplement with okuri-ari and okuri-nasi sections', skk=dict(stats),
-                    sha256=digest(output), candidate_order='okuri-ari: skk-l first, then other sources in catalog order, each in source order; okuri-nasi: as in the input TSV '
+                    sha256=digest(output), candidate_order='okuri-ari: upstream SKK candidates first (skk-l in SKK-JISYO.L order, then other SKK sources in catalog '
+                                    'order, each in source order), then rule-generated candidates (stem+okuri letter split from Sudachi inflected forms '
+                                    'or JMdict conjugation tables; no generative AI) by the okuri-nasi cost of their dictionary form; okuri-nasi: as in the input TSV '
                                     '(jisyo.py: skk-l first in SKK-JISYO.L order, then ascending estimated cost on the sudachi-small scale: '
                                     'Mozc OSS word cost (ranking-only source, quantile-mapped) when selected and present, otherwise sudachi-small cost '
-                                    'or JMdict priority tags (+ a shift when missing from a selected Mozc), then per-source defaults; katakana spellings '
-                                    'of the key without JMdict/Mozc evidence after other words, ASCII after those, kana-identical candidates last); '
-                                    'not measured usage frequency; use after personal/base SKK dictionaries',
-                    exclusions='unrepresentable plain SKK keys/candidates omitted; no Lisp expressions emitted')
+                                    'or JMdict priority tags (+ a shift when missing from a selected Mozc), then per-source defaults; JMdict forms tagged only '
+                                    'irregular/rare/outdated after the defaults; katakana spellings of the key without JMdict/Mozc evidence after other words, '
+                                    'ASCII after those, kana-identical candidates last); not measured usage frequency; use after personal/base SKK dictionaries',
+                    exclusions='unrepresentable plain SKK keys/candidates omitted; no Lisp expressions emitted; JMdict search-only forms (sK/sk) omitted')
     write_json(str(output) + '.manifest.json', manifest)
     print(f"exported SKK: {dict(stats)}", flush=True)
     return manifest

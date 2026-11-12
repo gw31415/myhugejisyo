@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import io
+import sqlite3
 import json
 import tempfile
 import unittest
@@ -161,7 +162,8 @@ class ConversionTests(unittest.TestCase):
         E = jisyo.Entry
         parsed = [E('あ', '亜', 'p1', cost=50), E('い', '以', '', scope='skk'), E('あ', '亜', 'p2', cost=10, pri='news1'),
                   E('い', '以', '', scope='migemo'), E('う', '宇', '', pri='ichi1'), E('う', '宇', '', pri='spec1'),
-                  E('え', '江', '', scope='skk'), E('え', '江', '', scope='skk')]
+                  E('え', '江', '', scope='skk'), E('え', '江', '', scope='skk'),
+                  E('お', '尾', '', inf='iK|oK'), E('お', '尾', '', inf='iK|rK'), E('か', '可', '', inf='iK'), E('か', '可', '')]
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             with patch.multiple(jisyo, DB=root/'db.sqlite', ROOT=root, rows=lambda source, stats: iter(parsed)):
@@ -170,7 +172,10 @@ class ConversionTests(unittest.TestCase):
                 with sqlite3.connect(root/'db.sqlite') as db:
                     self.assertEqual(db.execute('SELECT reading,kind,scope,rank,cost,pri,pos FROM entries ORDER BY reading').fetchall(),
                                      [('あ', 'nasi', 'all', 0, 10, 'news1', 'p1'), ('い', 'nasi', 'all', 1, None, None, ''),
-                                      ('う', 'nasi', 'all', 4, None, 'ichi1', ''), ('え', 'nasi', 'skk', 6, None, None, '')])
+                                      ('う', 'nasi', 'all', 4, None, 'ichi1', ''), ('え', 'nasi', 'skk', 6, None, None, ''),
+                                      ('お', 'nasi', 'all', 8, None, None, ''), ('か', 'nasi', 'all', 10, None, None, '')])
+                    # JMdict form tags keep only those every occurrence carries.
+                    self.assertEqual(db.execute('SELECT reading,inf FROM entries WHERE inf IS NOT NULL').fetchall(), [('お', 'iK')])
 
     def test_okuri_ari_round_trip_scopes_and_migemo_export(self):
         sources = {'skk-l': ''';; okuri-ari entries.
@@ -206,6 +211,169 @@ class ConversionTests(unittest.TestCase):
                 self.assertEqual([e[:5] for e in jisyo.parse_skk(io.StringIO(text), Counter())][:3],
                                  [('かk', '書', '', 'ari', 'skk'), ('かk', '描', '', 'ari', 'skk'), ('かk', '掛', '', 'ari', 'skk')])
 
+
+def sudachi_row(surface, reading, conjugation, form, lemma, normalized, cost=5000, pos='動詞'):
+    return ','.join([surface, '1', '1', str(cost), surface, pos, '一般', '*', '*', conjugation, form, reading, normalized,
+                     str(lemma), 'A'] + ['*'] * 4)
+
+
+JMDICT_DTD = '''<!DOCTYPE JMdict [<!ENTITY v5k "Godan verb with 'ku' ending"><!ENTITY v1 "Ichidan verb"><!ENTITY exp "expressions">
+<!ENTITY sK "search-only kanji form"><!ENTITY sk "search-only kana form"><!ENTITY iK "word containing irregular kanji usage">
+<!ENTITY ok "out-dated or obsolete kana usage"><!ENTITY n "noun">]>'''
+
+
+class OkuriTests(unittest.TestCase):
+    def test_split_and_letters_per_conjugation(self):
+        # (inflected surface, reading) -> SKK okuri-ari pairs; one row per 五段 行, 一段, adjectives, サ変, カ変 and 音便.
+        cases = [('書か', 'カカ', ['かk']), ('泳ご', 'オヨゴ', ['およg']), ('話し', 'ハナシ', ['はなs']), ('立ち', 'タチ', ['たt']),
+                 ('死な', 'シナ', ['しn']), ('飛べ', 'トベ', ['とb']), ('読も', 'ヨモ', ['よm']), ('取ろ', 'トロ', ['とr']),
+                 ('買わ', 'カワ', ['かw']), ('買え', 'カエ', ['かe']), ('買お', 'カオ', ['かo']), ('買う', 'カウ', ['かu']),
+                 ('書い', 'カイ', ['かi']), ('泳い', 'オヨイ', ['およi']), ('買っ', 'カッ', ['かt', 'かc']), ('取っ', 'トッ', ['とt', 'とc']),
+                 ('読ん', 'ヨン', ['よn']), ('飛ん', 'トン', ['とn']), ('死ん', 'シン', ['しn']),
+                 ('食べる', 'タベル', ['たb']), ('見る', 'ミル', ['みr']), ('見よ', 'ミヨ', ['みy']), ('感じ', 'カンジ', ['かんj', 'かんz']),
+                 ('大きく', 'オオキク', ['おおk']), ('美しかっ', 'ウツクシカッ', ['うつくs']), ('高かろ', 'タカカロ', ['たかk']),
+                 ('酸っぱい', 'スッパイ', ['すp']), ('愛さ', 'アイサ', ['あいs']), ('来い', 'コイ', ['こi']), ('来る', 'クル', ['くr']),
+                 ('取り扱う', 'トリアツカウ', ['とりあつかu']), ('ぶっ飛ばす', 'ブットバス', []), ('ググる', 'ググル', []),
+                 ('見', 'ミ', []), ('書く', 'ヨム', []), ('取り扱う', 'トルアツカウ', []), ('Ｇる', 'ジールル', []), ('ブチ切れ', 'ブチキレ', [])]
+        for surface, reading, keys in cases:
+            with self.subTest(surface=surface, reading=reading):
+                self.assertEqual([k for k, _ in jisyo.okuri_keys(surface, reading)], keys)
+        self.assertEqual(jisyo.okuri_keys('取り扱う', 'とりあつかう'), [('とりあつかu', '取り扱')])
+        self.assertEqual(jisyo.okuri_split('大きく', 'おおきく'), ('おお', '大', 'きく'))
+
+    def test_jmdict_conjugation_tables(self):
+        cases = [('書く', 'かく', 'v5k', 'かk かi'), ('泳ぐ', 'およぐ', 'v5g', 'およg およi'), ('話す', 'はなす', 'v5s', 'はなs'),
+                 ('立つ', 'たつ', 'v5t', 'たt たc'), ('死ぬ', 'しぬ', 'v5n', 'しn'), ('飛ぶ', 'とぶ', 'v5b', 'とb とn'),
+                 ('読む', 'よむ', 'v5m', 'よm よn'), ('取る', 'とる', 'v5r', 'とr とt とc とn'), ('有る', 'ある', 'v5r-i', 'あr あt あc'),
+                 ('買う', 'かう', 'v5u', 'かw かi かu かe かo かt かc'), ('問う', 'とう', 'v5u-s', 'とw とi とu とe とo'),
+                 ('行く', 'いく', 'v5k-s', 'いk いt いc'), ('行く', 'ゆく', 'v5k-s', 'ゆk'), ('下さる', 'くださる', 'v5aru', 'くだs'),
+                 ('食べる', 'たべる', 'v1', 'たb'), ('見る', 'みる', 'v1', 'みr みy みt みn みm'), ('来る', 'くる', 'vk', 'くr こi こy きt こn きm こr'),
+                 ('愛する', 'あいする', 'vs-s', 'あいs'), ('感ずる', 'かんずる', 'vz', 'かんz かんj'), ('大きい', 'おおきい', 'adj-i', 'おおk'),
+                 ('高い', 'たかい', 'adj-i', 'たかi たかk たかs'), ('良い', 'よい', 'adj-ix', 'よi よk よs'), ('良い', 'いい', 'adj-ix', 'いi'),
+                 ('くる', 'くる', 'vk', ''), ('勉強', 'べんきょう', 'vs', ''), ('会す', 'かいす', 'vs-c', '')]
+        for surface, reading, code, keys in cases:
+            with self.subTest(surface=surface, code=code):
+                self.assertEqual(' '.join(k for k, _ in jisyo.jmdict_okuri(surface, reading, code)), keys)
+        self.assertEqual({s for _, s in jisyo.jmdict_okuri('来る', 'くる', 'vk')}, {'来'})
+
+    def test_jmdict_form_tags_and_generation(self):
+        xml = (JMDICT_DTD + '''<JMdict><entry><k_ele><keb>書く</keb><ke_pri>ichi1</ke_pri></k_ele><k_ele><keb>畫く</keb><ke_inf>&iK;</ke_inf></k_ele>
+        <k_ele><keb>描く</keb></k_ele><k_ele><keb>書ク</keb><ke_inf>&sK;</ke_inf></k_ele>
+        <r_ele><reb>かく</reb><re_pri>ichi1</re_pri></r_ele><r_ele><reb>かゝく</reb><re_inf>&sk;</re_inf></r_ele><sense><pos>&v5k;</pos></sense></entry>
+        <entry><k_ele><keb>気が付く</keb></k_ele><r_ele><reb>きがつく</reb></r_ele><sense><pos>&exp;</pos><pos>&v5k;</pos></sense></entry>
+        <entry><k_ele><keb>居る</keb></k_ele><r_ele><reb>ゐる</reb><re_inf>&ok;</re_inf></r_ele><sense><pos>&v1;</pos></sense></entry>
+        </JMdict>''').encode()
+        stats = Counter()
+        entries = list(jisyo.parse_jmdict(io.BytesIO(xml), stats))
+        nasi = {(e.reading, e.surface): (e.scope, e.inf, e.pri) for e in entries if e.kind == 'nasi'}
+        self.assertEqual(nasi[('かく', '書く')], ('all', None, 'ichi1'))
+        self.assertEqual(nasi[('かく', '畫く')], ('all', 'iK', None))
+        # Search-only kanji (sK) and kana (sk) forms stay for RustMigemo only.
+        self.assertEqual(nasi[('かく', '書ク')][0], 'migemo')
+        self.assertEqual({s for (r, s), v in nasi.items() if r == 'かゝく'}, {'書く', '畫く', '描く', '書ク'})
+        self.assertTrue(all(v[0] == 'migemo' for (r, _), v in nasi.items() if r == 'かゝく'))
+        self.assertEqual(nasi[('ゐる', '居る')], ('all', 'ok', None))
+        self.assertEqual(stats['jmdict_search_only_pair'], 5)
+        ari = [(e.reading, e.surface, e.pos, e.scope, e.confidence) for e in entries if e.kind == 'ari']
+        # Only the headword (or a form with its own priority) generates; irregular, search-only, expression entries do not.
+        self.assertEqual(ari, [('かk', '書', 'okuri-rule|v5k|かく|書く', 'skk', 'rule-generated'),
+                               ('かi', '書', 'okuri-rule|v5k|かく|書く', 'skk', 'rule-generated')])
+
+    def test_sudachi_lemmas_need_canonical_dictionary_form(self):
+        rows = [sudachi_row('書か', 'カカ', '五段-カ行', '未然形-一般', 10, '書く', 6000),
+                sudachi_row('書い', 'カイ', '五段-カ行', '連用形-イ音便', 10, '書く', 5000),
+                sudachi_row('書く', 'カク', '五段-カ行', '終止形-一般', 10, '書く', 4000),
+                # Okurigana-omitted spelling with its own lemma: normalized form differs, skipped.
+                sudachi_row('書', 'カク', '五段-カ行', '終止形-一般', 11, '書く'),
+                sudachi_row('止どめる', 'トドメル', '下一段-マ行', '終止形-一般', 20, '止める'),
+                sudachi_row('止どめ', 'トドメ', '下一段-マ行', '連用形-一般', 20, '止める'),
+                # A stem reading that differs from the dictionary form's (大っきい) is skipped; カ変 may change it.
+                sudachi_row('大きい', 'オオキイ', '形容詞', '終止形-一般', 30, '大きい', 3000, '形容詞'),
+                sudachi_row('大きく', 'オオキク', '形容詞', '連用形-一般', 30, '大きい', 3000, '形容詞'),
+                sudachi_row('大っきく', 'オッキク', '形容詞', '連用形-一般', 30, '大きい', 3000, '形容詞'),
+                sudachi_row('高う', 'タコウ', '形容詞', '連用形-ウ音便', 31, '高い', 3000, '形容詞'),
+                sudachi_row('高い', 'タカイ', '形容詞', '終止形-一般', 31, '高い', 3000, '形容詞'),
+                sudachi_row('来る', 'クル', 'カ行変格', '終止形-一般', 40, '来る', 4500),
+                sudachi_row('来い', 'コイ', 'カ行変格', '命令形', 40, '来る', 4500),
+                sudachi_row('ググる', 'ググル', '五段-ラ行', '終止形-一般', 50, 'ググる'),
+                sudachi_row('愛する', 'アイスル', 'サ行変格', '終止形-一般', 60, '愛する')]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root/'sudachi').mkdir()
+            path = root/'sudachi/source'
+            with zipfile.ZipFile(path, 'w') as z:
+                z.writestr('small_lex.csv', '\n'.join(rows) + '\n')
+            source = {'id': 'sudachi', 'format': 'sudachi', 'sha256': jisyo.digest(path)}
+            stats = Counter()
+            with patch.object(jisyo, 'CACHE', root):
+                ari = [(e.reading, e.surface, e.cost, e.pos) for e in jisyo.rows(source, stats) if e.kind == 'ari']
+        self.assertEqual(ari, [('おおk', '大', 3000, 'okuri-rule|形容詞|おおきい|大きい'), ('かi', '書', 4000, 'okuri-rule|五段-カ行|かく|書く'),
+                               ('かk', '書', 4000, 'okuri-rule|五段-カ行|かく|書く'), ('くr', '来', 4500, 'okuri-rule|カ行変格|くる|来る'),
+                               ('こi', '来', 4500, 'okuri-rule|カ行変格|くる|来る'), ('たかi', '高', 3000, 'okuri-rule|形容詞|たかい|高い')])
+        self.assertEqual(stats['okuri_skipped_lemma'], 1)
+        self.assertEqual(stats['okuri_skipped_form'], 2)  # 大っきく, 高う (たこう)
+
+    def test_ari_order_keeps_upstream_prefix_then_generated_by_cost(self):
+        order = {'skk-l': (False, 0), 'skk-geo': (True, 1), 'sudachi-small': (True, 2), 'jmdict': (True, 3)}
+        G, U = jisyo.GENERATED, 'upstream-provided'
+        rows = [('描', 'skk-l', 2, None, None, None, U, None), ('書', 'skk-l', 1, None, None, None, U, None),
+                ('欠', 'skk-geo', 0, None, None, None, U, None), ('書', 'sudachi-small', 9, 4000, None, None, G, ('かく', '書く')),
+                ('掻', 'sudachi-small', 5, 9000, None, None, G, ('かく', '掻く')), ('舁', 'jmdict', 3, None, None, None, G, ('かく', '舁く')),
+                ('斯', 'jmdict', 4, None, 'news1|nf10', None, G, ('かく', '斯く')), ('畫', 'jmdict', 1, None, 'ichi1', 'iK', G, ('かく', '畫く'))]
+        # skk-l in L order first, other SKK sources next, then generated by cost; irregular forms after source defaults.
+        self.assertEqual(jisyo.ari_candidates('かk', rows, order), ['書', '描', '欠', '斯', '掻', '舁', '畫'])
+        # Mozc costs of the dictionary forms decide when Mozc is selected; absent forms are shifted.
+        self.assertEqual(jisyo.ari_candidates('かk', rows, order, {('かく', '掻く'): 3000}), ['書', '描', '欠', '掻', '斯', '舁', '畫'])
+        import random
+        for seed in range(5):
+            random.Random(seed).shuffle(rows)
+            self.assertEqual(jisyo.ari_candidates('かk', rows, order), ['書', '描', '欠', '斯', '掻', '舁', '畫'])
+
+    def test_irregular_forms_demoted_in_okuri_nasi(self):
+        def order(rows):
+            return jisyo.nasi_candidates('かく', rows, {'skk-l'})
+        rows = [('書く', 'jmdict', 1, None, 'ichi1', 'かく', None), ('畫く', 'jmdict', 2, None, 'ichi1', 'かく', 'iK'),
+                ('掻く', 'sudachi-small', 3, 9000, None), ('舁く', 'jmnedict', 4, None, None), ('角', 'jmed', 5, None, None)]
+        self.assertEqual(order(rows), ['書く', '掻く', '舁く', '角', '畫く'])
+        # A spelling some JMdict row lists as regular is not demoted; rule 1 (skk-l order) still wins.
+        self.assertEqual(order(rows + [('畫く', 'jmdict', 6, None, None, 'かく', None)])[:2], ['書く', '畫く'])
+        self.assertEqual(order(rows + [('畫く', 'skk-l', 0, None, None)])[0], '畫く')
+        self.assertTrue(jisyo.irregular([('jmdict', 0, None, None, True), ('sudachi-small', 0, 1, None, False)]))
+        self.assertFalse(jisyo.irregular([('sudachi-small', 0, 1, None, False)]))
+
+    def test_profiles_generate_by_source_and_keep_l_prefix(self):
+        E, G = jisyo.Entry, jisyo.GENERATED
+        parsed = {'skk-l': [E('かk', '書', '', 'ari', 'skk'), E('かk', '描', '', 'ari', 'skk'), E('かく', '書く', '')],
+                  'sudachi-small': [E('かく', '書く', '', cost=4000), E('かk', '掻', 'okuri-rule|五段-カ行|かく|掻く', 'ari', 'skk', 9000, confidence=G),
+                                    E('かk', '書', 'okuri-rule|五段-カ行|かく|書く', 'ari', 'skk', 4000, confidence=G)],
+                  'jmdict': [E('かく', '書く', ''), E('かく', '書ク', '', scope='migemo', inf='sK'),
+                             E('かk', '舁', 'okuri-rule|v5k|かく|舁く', 'ari', 'skk', confidence=G)],
+                  'jmed': [E('かく', '核', '')]}
+        profiles = {'core': ['skk-l', 'sudachi-small'], 'edrdg': ['jmdict'], 'medical': ['jmed'], 'all': list(parsed)}
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            with patch.multiple(jisyo, DB=root/'db.sqlite', ROOT=root, rows=lambda source, stats: iter(parsed[source['id']])):
+                jisyo.ingest([dict(id=id, format='skk' if id == 'skk-l' else 'x', notice_files=[]) for id in parsed])
+                report = json.loads((root/'data/import-report.json').read_text())
+                self.assertEqual(report['sudachi-small']['okuri_generated_unique_pairs'], 2)
+                self.assertEqual(report['totals']['okuri_ari_generated_only_pairs'], 2)
+                with patch.object(jisyo, 'write_export', lambda output, records, *rest: (list(records), rest[-1])):
+                    # The search-only form stays in RustMigemo; generated okuri-ari pairs never reach it.
+                    self.assertEqual(jisyo.export(None, root/'m.tsv')[0], [('かく', '書く'), ('かく', '書ク'), ('かく', '核')])
+                    def ari(profile):
+                        records, extra = jisyo.export_skk_tsv(profiles[profile], root/'x')
+                        return [s for kind, key, s in records if kind == 'ari'], extra['okuri_ari'], records
+                    self.assertEqual(ari('core')[0], ['書', '描', '掻'])
+                    self.assertEqual(ari('edrdg')[0], ['舁'])
+                    self.assertEqual(ari('medical')[0], [])
+                    candidates, origin, records = ari('all')
+                    self.assertEqual(candidates, ['書', '描', '掻', '舁'])
+                    self.assertEqual(origin, {'candidates_jmdict': 1, 'candidates_skk': 2, 'candidates_sudachi': 1, 'keys': 1, 'keys_with_upstream': 1})
+                    self.assertNotIn(('nasi', 'かく', '書ク'), records)
+            provenance = sqlite3.connect(root/'db.sqlite').execute("SELECT confidence FROM entries WHERE reading='かk' AND source='jmdict'").fetchone()
+            self.assertEqual(provenance, (G,))
+
+
 class CandidateOrderTests(unittest.TestCase):
     SKK = {'skk-l', 'skk-jinmei', 'jawiki'}
 
@@ -237,7 +405,7 @@ class CandidateOrderTests(unittest.TestCase):
         self.assertEqual(self.order('こーひー', coffee), ['コーヒー', '珈琲', 'coffee'])
         self.assertEqual(self.order('こーひー', [r[:5] for r in coffee]), ['珈琲', 'コーヒー', 'coffee'])
         self.assertEqual(jisyo.candidate_rows(coffee[2:3] + [('可否', 'jmdict', 5, None, None, 'かひ')]),
-                         {'珈琲': [('jmdict', 3, None, 'gai1|ichi1')], '可否': [('jmdict', 5, None, None)]})
+                         {'珈琲': [('jmdict', 3, None, 'gai1|ichi1', False)], '可否': [('jmdict', 5, None, None, False)]})
         self.assertEqual(self.order('おくらす', [('オクラス', 'sudachi-small', 1, 3888, None), ('遅らす', 'jmdict', 2, None, 'ichi1')]),
                          ['遅らす', 'オクラス'])
         self.assertEqual(self.order('ぼむ', [('ボム', 'sudachi-small', 1, 3000, None), ('爆弾', 'jawiki', 2, None, None)]), ['爆弾', 'ボム'])
