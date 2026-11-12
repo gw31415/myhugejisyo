@@ -17,7 +17,8 @@ Lisp式・送り仮名ブロック、未対応文字・空表記等を除外し�
 Sudachiの活用形はRustMigemo出力だけに使いました。元の表記を保持し、編集用TSV、
 RustMigemo compact、UTF-8 SKKへ出力しました。SKKでは安全に表せないキー・候補をさらに
 除外し、送りありは見出し降順・出典順、送りなしは見出し昇順で、候補はSKK-JISYO.Lの順を先頭に、
-残りを辞書内の信号（Sudachiコスト・JMdict優先度・出典別既定値）から推定した順に並べ替えました。
+残りを辞書内の信号（Mozc OSSのコスト・Sudachiコスト・JMdict優先度・出典別既定値）から推定した順に
+並べ替えました。Mozc OSS辞書は候補順の決定だけに使い、語彙は追加していません。
 JMEDは出現形・出現形よみだけを抽出し、外部医療コードを除外しました。
 同梱した原資料と上流告知は変更していません（JMED入力のみ語彙TSVへ置換）。
 変更は本プロジェクトによるもので、上流作者による変更・推奨・公認ではありません。'''
@@ -46,7 +47,7 @@ def release_identity(root, repository, tag, modifier, generated_at):
 def skk_headers(info, profile):
     return [f"License: {LICENSES[profile]}; original attribution/conditions retained in accompanying bundle.",
             f"Modified by {info['modifier']} at {info['generated_at']}; release {info['tag']}; profile {profile}.",
-            'Changes: extraction, normalization, filtering, merging, deduplication, reordering (okuri-ari by source; okuri-nasi by SKK-JISYO.L, then estimated cost), format conversion; see CHANGES.md.',
+            'Changes: extraction, normalization, filtering, merging, deduplication, reordering (okuri-ari by source; okuri-nasi by SKK-JISYO.L, then estimated cost incl. Mozc OSS costs where selected), format conversion; see CHANGES.md.',
             f"Corresponding source: {info['corresponding_source_url']}"]
 
 
@@ -67,6 +68,7 @@ def write_documents(stage, root, info, sources):
         notices = notices.replace(f"third_party/licenses/{source['id']}/", f"UPSTREAM_NOTICES/{source['id']}/")
     notices = notices.replace('third_party/licenses/skk-*/', 'UPSTREAM_NOTICES/skk-*/')
     notices = notices.replace('third_party/licenses/sudachi-*/', 'UPSTREAM_NOTICES/sudachi-*/')
+    notices = notices.replace('third_party/licenses/mozc/', 'UPSTREAM_NOTICES/mozc-*/')
     notices += '\n## このリリースの原文告知\n\nこの版の帰属・既存告知は次の全ファイルを含めたものです。固定版の一般説明と相違がある場合も、原文を省略しません。\n\n'
     for path in sorted((stage/'UPSTREAM_NOTICES').rglob('*')):
         if path.is_file():
@@ -88,11 +90,11 @@ python3 scripts/rebuild.py
 
 元入力から取り込み直す場合は `python3 jisyo.py ingest` を実行し、RELEASE.json の各profileのsource_idsを `python3 jisyo.py export --sources ... --output rebuilt.tsv`（SKKは `python3 jisyo.py skk --sources ... --output rebuilt.utf8`）に指定してください。取り込み条件・除外処理は jisyo.py、各入力の版・ハッシュは sources.lock.json です。`fetch --update` は別版の取得なので、同一版の再生成には実行しません。
 
-JMEDの入力だけは外部医療コードを含まない正規化済みの読み・表記TSVです。原ZIPの版・ハッシュ・取得日もロックに残します。元の読みと単語ごとの出典対応は provenance.tsv（TSVの標準CSV引用規則）に保存しています。重複統合された候補にも複数の出典行を残します。SQLiteは自動再生成できる中間物なので省略します。
+JMEDの入力だけは外部医療コードを含まない正規化済みの読み・表記TSVです。原ZIPの版・ハッシュ・取得日もロックに残します。元の読みと単語ごとの出典対応は provenance.tsv（TSVの標準CSV引用規則）に保存しています。重複統合された候補にも複数の出典行を残します。SQLiteは自動再生成できる中間物なので省略します。Mozc OSS辞書（`mozc-00`〜`mozc-09`）はSKK送りなし候補の順位付けだけに使う入力で、SQLiteの `costs` 表に入り、語彙・provenance.tsvには現れません。
 
 LICENSE・LICENSING.md・CHANGES.md・THIRD_PARTY_NOTICES.md・UPSTREAM_NOTICES/を併せて参照してください。Git履歴や秘密情報は再生成に不要であり同梱しません。
 ''')
-    (stage/'RELEASE_NOTES.md').write_text(f"# {info['tag']}\n\nRustMigemo / UTF-8 SKK辞書。allは全収録元、coreはSKK＋Sudachi、edrdgはJMdict/JMnedict、medicalはJMEDです。\n\nall/coreの統合・編集成果物: GPL-3.0-only。edrdg: CC-BY-SA-4.0。medical: CC-BY-4.0。原資料の条件・帰属は保持しています。\n\n各 `*-dictionaries.tar.gz` に辞書、編集用TSV、ライセンス・帰属・変更表示を同梱しています。単独辞書を取得する場合も該当bundleの告知を参照してください。\n\n[同じ版の対応ソース（固定入力・編集用語彙・生成コード・依存ソース・再生成手順）]({info['corresponding_source_url']})を追加料金なしで取得できます。SHA256SUMSで全ダウンロードを検証できます。\n")
+    (stage/'RELEASE_NOTES.md').write_text(f"# {info['tag']}\n\nRustMigemo / UTF-8 SKK辞書。allは全収録元、coreはSKK＋Sudachi、edrdgはJMdict/JMnedict、medicalはJMEDです。allとcoreはSKK送りなし候補の並べ替えだけにMozc OSS辞書のコストを使います（語彙は追加しません）。\n\nall/coreの統合・編集成果物: GPL-3.0-only。edrdg: CC-BY-SA-4.0。medical: CC-BY-4.0。原資料の条件・帰属は保持しています。\n\n各 `*-dictionaries.tar.gz` に辞書、編集用TSV、ライセンス・帰属・変更表示を同梱しています。単独辞書を取得する場合も該当bundleの告知を参照してください。\n\n[同じ版の対応ソース（固定入力・編集用語彙・生成コード・依存ソース・再生成手順）]({info['corresponding_source_url']})を追加料金なしで取得できます。SHA256SUMSで全ダウンロードを検証できます。\n")
 
 
 def add_checksums(stage):

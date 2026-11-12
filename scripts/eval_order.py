@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Evaluate okuri-nasi candidate order against the raw SKK-JISYO.L (stdlib only).
 
-(a) Hold-out: jisyo.py's pseudo-cost computed WITHOUT skk-l rows, compared with SKK-JISYO.L's
+(a) Hold-out: jisyo.py's pseudo-cost (with Mozc costs when selected) computed WITHOUT skk-l rows, compared with SKK-JISYO.L's
     candidate order (adjacent pairs and first two candidates), next to the lexical baseline.
 (b) Keys whose first okuri-nasi candidate is pure hiragana, katakana or ASCII, lexical vs. actual order.
 (c) First candidates of fixed probe keys; with --db also by the pseudo-cost alone (skk-l rows ignored).
@@ -11,6 +11,7 @@
 import argparse
 from collections import Counter
 import itertools
+import json
 from pathlib import Path
 import re
 import sqlite3
@@ -19,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import jisyo
 
-PROBES = 'かんじ こうせい きかん しよう かく はし あめ こうえん せいかく たなか とうきょう こーひー'.split()
+PROBES = 'かんじ こうせい きかん しよう かく はし あめ こうえん せいかく たなか とうきょう こーひー ばんでん とくず てれび あるごりずむ いく'.split()
 HIRAGANA, KATAKANA = re.compile('[ぁ-ゖーゝゞ]+'), re.compile('[ァ-ヺー・ヽヾ]+')
 
 
@@ -35,16 +36,18 @@ def skk_l_order(path, encoding):
 
 
 def db_keys(db, sources):
-    """Yield (key, rows, selected SKK source IDs) in key order from the SQLite master."""
+    """Yield (key, rows, selected SKK source IDs, Mozc costs) in key order from the SQLite master."""
     con = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
-    meta = {i: f for i, f in con.execute("SELECT id,json_extract(metadata,'$.format') FROM sources")}
+    metadata = [json.loads(row[0]) for row in con.execute('SELECT metadata FROM sources')]
+    meta = {s['id']: s['format'] for s in metadata}
     selected = sorted(sources or meta)
     skk_sources = {i for i in selected if meta[i] == 'skk'}
     query = ('SELECT reading,surface,source,rank,cost,pri,original_reading FROM entries WHERE source IN (' + ','.join('?' * len(selected))
              + ") AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
+    groups = itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
     try:
-        for key, rows in itertools.groupby(con.execute(query, selected), key=lambda row: row[0]):
-            yield key, [row[1:] for row in rows], skk_sources
+        for key, rows, mozc in jisyo.join_costs(groups, jisyo.ranking_costs(con, metadata, selected)):
+            yield key, [row[1:] for row in rows], skk_sources, mozc
     finally:
         con.close()
 
@@ -96,13 +99,13 @@ def main():
 
     if args.db:
         stats = Counter()
-        for key, rows, skk_sources in db_keys(args.db, args.sources):
+        for key, rows, skk_sources, mozc in db_keys(args.db, args.sources):
             if not args.skk:
-                count_first(key, jisyo.nasi_candidates(key, rows, skk_sources))
+                count_first(key, jisyo.nasi_candidates(key, rows, skk_sources, mozc))
             if key not in truth and key not in PROBES:
                 continue
             # Ignore rule 1: pseudo-cost from every selected source except skk-l itself.
-            held = jisyo.candidate_rows(row for row in rows if row[1] != 'skk-l')
+            held = jisyo.candidate_rows((row for row in rows if row[1] != 'skk-l'), mozc)
             if key in PROBES:
                 held_probes[key] = sorted(held, key=lambda s: jisyo.candidate_order(key, s, held[s], skk_sources))[:8]
             if key not in truth:

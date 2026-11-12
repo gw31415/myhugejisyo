@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import io
+import json
 import tempfile
 import unittest
 from collections import Counter
@@ -74,16 +75,18 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual((root/'skk.tsv').read_text(), 'nasi\tかく\t書く\nnasi\tひと\t人\n')
 
     def test_jmdict_restrictions_no_kanji_and_kana(self):
-        xml = b'''<!DOCTYPE JMdict [<!ENTITY n "noun">]><JMdict><entry>
+        xml = '''<!DOCTYPE JMdict [<!ENTITY n "noun">]><JMdict><entry>
         <k_ele><keb>A</keb><ke_pri>news1</ke_pri><ke_pri>ichi1</ke_pri></k_ele><k_ele><keb>B</keb></k_ele>
-        <r_ele><reb>a</reb><re_restr>A</re_restr><re_pri>spec1</re_pri></r_ele>
+        <r_ele><reb>a</reb><re_restr>A</re_restr><re_pri>spec1</re_pri><re_pri>news1</re_pri></r_ele>
         <r_ele><reb>b</reb><re_nokanji/></r_ele>
         <r_ele><reb>c</reb></r_ele><sense><pos>&n;</pos></sense>
-        </entry><entry><r_ele><reb>d</reb></r_ele></entry></JMdict>'''
+        </entry><entry><r_ele><reb>d</reb></r_ele></entry>
+        <entry><k_ele><keb>珈琲</keb></k_ele><r_ele><reb>コーヒー</reb><re_pri>gai1</re_pri></r_ele></entry></JMdict>'''.encode()
         entries = list(jisyo.parse_jmdict(io.BytesIO(xml), Counter()))
         self.assertEqual([e[:3] for e in entries],
-                         [('a', 'A', 'noun'), ('b', 'b', 'noun'), ('c', 'A', 'noun'), ('c', 'B', 'noun'), ('d', 'd', '')])
-        self.assertEqual([e.pri for e in entries], ['ichi1|news1|spec1', None, 'ichi1|news1', None, None])
+                         [('a', 'A', 'noun'), ('b', 'b', 'noun'), ('c', 'A', 'noun'), ('c', 'B', 'noun'), ('d', 'd', ''), ('コーヒー', '珈琲', '')])
+        # Kanji forms keep the ke_pri tags shared with the reading's re_pri; a katakana (loanword) reading keeps its re_pri.
+        self.assertEqual([e.pri for e in entries], ['news1', None, None, None, None, 'gai1'])
 
     def test_xlsx_sparse_inline_shared_strings(self):
         data = io.BytesIO()
@@ -216,8 +219,9 @@ class CandidateOrderTests(unittest.TestCase):
                 ('関自', 'jawiki', 7, None, None), ('患耳', 'jmed', 8, None, None), ('Kanji', 'sudachi-small', 9, 100, None),
                 ('かんじ', 'sudachi-small', 10, 50, None), ('カンジ', 'sudachi-small', 11, 2148, None),
                 ('幹事', 'skk-l', 21, None, None), ('漢字', 'skk-l', 20, None, None), ('漢字', 'jawiki', 1, None, None)]
+        # カンジ is only a katakana spelling of the key (no JMdict/Mozc evidence): after the other words, before ASCII.
         self.assertEqual(self.order('かんじ', rows),
-                         ['漢字', '幹事', '感じ', '完治', '監事', 'カンジ', '冠辞', '丞治', '乾二', '関自', '患耳', 'Kanji', 'かんじ'])
+                         ['漢字', '幹事', '感じ', '完治', '監事', '冠辞', '丞治', '乾二', '関自', '患耳', 'カンジ', 'Kanji', 'かんじ'])
         self.assertEqual(jisyo.pri_cost('ichi1|news1|nf01'), jisyo.NF_COST[0])
         self.assertEqual(jisyo.pri_cost('news2|nf48'), jisyo.NF_COST[-1])
         self.assertEqual([jisyo.pri_cost(p) for p in ['gai1', 'spec1|news2', 'ichi2']],
@@ -236,6 +240,7 @@ class CandidateOrderTests(unittest.TestCase):
                          {'珈琲': [('jmdict', 3, None, 'gai1|ichi1')], '可否': [('jmdict', 5, None, None)]})
         self.assertEqual(self.order('おくらす', [('オクラス', 'sudachi-small', 1, 3888, None), ('遅らす', 'jmdict', 2, None, 'ichi1')]),
                          ['遅らす', 'オクラス'])
+        self.assertEqual(self.order('ぼむ', [('ボム', 'sudachi-small', 1, 3000, None), ('爆弾', 'jawiki', 2, None, None)]), ['爆弾', 'ボム'])
         self.assertEqual(self.order('たたく', [('たゝく', 'sudachi-small', 1, 0, None), ('叩く', 'sudachi-small', 2, 7329, None),
                                               ('敲く', 'jmdict', 3, None, None)]), ['叩く', '敲く', 'たゝく'])
         # Rule 1 wins over the adjustments: skk-l keeps its own order even for ASCII or the key itself.
@@ -276,6 +281,109 @@ class CandidateOrderTests(unittest.TestCase):
                     self.assertEqual(nasi(None), nasi(None))
                     self.assertEqual(jisyo.export(None, root/'m'), [('かか', '書か')] + [('かんじ', s) for s in sorted(
                         ['監事', '漢字', '感じ', '幹事', '冠辞', '寛治', '患児', '患耳', 'かんじ'])])
+
+
+class MozcTests(unittest.TestCase):
+    MOZC = ('ばんでん\t1920\t1920\t6826\t番田\nばんでん\t1924\t1924\t6704\t番田\nばんでん\t1841\t1841\t8159\tバンデン\n'
+            'てれび\t1851\t1851\t3607\tテレビ\nいく\t1370\t1370\t0\tイク\nすうぃーつ\t1851\t1851\t5000\tスウィーツ\n'
+            'あーがいる・ちぇっく\t1851\t1851\t7000\tアーガイル・チェック\nあばんしあ\t1841\t1841\t9218\tアヴァンシア\tSPELLING_CORRECTION\n'
+            'ぎょうざ\t1851\t1851\t5100\t餃子\n')
+
+    def build(self, root, sources):
+        lock = []
+        for id, format, text in sources:
+            folder = root/'raw'/id
+            folder.mkdir(parents=True)
+            (folder/'source').write_text(text)
+            lock.append(dict(id=id, format=format, encoding='utf-8', sha256=jisyo.digest(folder/'source'), notice_files=[]))
+        jisyo.ingest(lock)
+
+    def test_parser_min_cost_per_pair_and_normalization(self):
+        from contextlib import closing
+        import sqlite3
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            with patch.multiple(jisyo, DB=root/'db.sqlite', CACHE=root/'raw', ROOT=root):
+                self.build(root, [('skk-l', 'skk', 'ばんでん /番田/\n'), ('mozc-00', 'mozc', self.MOZC)])
+                with closing(sqlite3.connect(root/'db.sqlite')) as db:
+                    self.assertEqual(db.execute('SELECT reading,surface,cost FROM costs ORDER BY reading,surface').fetchall(),
+                                     [('あーがいるちぇっく', 'アーガイル・チェック', 7000), ('いく', 'イク', 0), ('ぎょうざ', '餃子', 5100),
+                                      ('すうぃーつ', 'スウィーツ', 5000), ('てれび', 'テレビ', 3607),
+                                      ('ばんでん', 'バンデン', 8159), ('ばんでん', '番田', 6704)])
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM entries WHERE source='mozc-00'").fetchone()[0], 0)
+                report = json.loads((root/'data/import-report.json').read_text())
+                self.assertEqual(report['mozc-00']['mozc_flagged_row'], 1)
+                self.assertEqual(report['totals']['ranking_pairs'], 7)
+                (root/'raw/mozc-00/source').write_text('あ\t1\t1\tx\t亜\n')
+                with self.assertRaisesRegex(ValueError, 'Mozc'):
+                    list(jisyo.rows(dict(id='mozc-00', format='mozc', sha256=jisyo.digest(root/'raw/mozc-00/source')), Counter()))
+
+    def test_ranking_only_and_order_with_mozc_present_or_absent(self):
+        skk = 'ばんでん /番田/バンデン/\nてれび /テレビ/\n'
+        sudachi = [jisyo.Entry('ばんでん', 'バンデン', '', cost=2000), jisyo.Entry('ばんでん', '晩田', '', cost=7000),
+                   jisyo.Entry('とくず', 'トクズ', '', cost=2000), jisyo.Entry('とくず', '土葛', '', cost=9000),
+                   jisyo.Entry('ぎょうざ', '餃子', '', cost=9000), jisyo.Entry('ぎょうざ', '行座', '', cost=8000)]
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            rows = jisyo.rows
+            def fake_rows(source, stats):
+                return iter(sudachi) if source['id'] == 'sudachi-small' else rows(source, stats)
+            with patch.multiple(jisyo, DB=root/'db.sqlite', CACHE=root/'raw', ROOT=root, rows=fake_rows):
+                self.build(root, [('jawiki', 'skk', skk), ('sudachi-small', 'x', ''), ('mozc-00', 'mozc', self.MOZC)])
+                with patch.object(jisyo, 'write_export', lambda output, records, *_: list(records)):
+                    without = ['jawiki', 'sudachi-small']
+                    migemo = jisyo.export(None, root/'m')
+                    self.assertEqual(migemo, jisyo.export(without, root/'m'))
+                    self.assertNotIn(('すうぃーつ', 'スウィーツ'), migemo)
+                    def nasi(ids):
+                        result = {}
+                        for _, key, surface in jisyo.export_skk_tsv(ids, root/'x'):
+                            result.setdefault(key, []).append(surface)
+                        return result
+                    present, absent = nasi(None), nasi(without)
+                    self.assertEqual({k: sorted(v) for k, v in present.items()}, {k: sorted(v) for k, v in absent.items()})
+                    # Without Mozc: Sudachi costs; unevidenced katakana spellings of the key after the words.
+                    self.assertEqual(absent['ばんでん'], ['晩田', '番田', 'バンデン'])
+                    self.assertEqual(absent['ぎょうざ'], ['行座', '餃子'])
+                    # With Mozc: its cost decides and is evidence for バンデン; words it lacks are shifted.
+                    self.assertEqual(present['ばんでん'], ['番田', '晩田', 'バンデン'])
+                    self.assertEqual(present['ぎょうざ'], ['餃子', '行座'])
+                    self.assertEqual(present['とくず'], absent['とくず'])
+                    self.assertEqual(present['とくず'], ['土葛', 'トクズ'])
+                    self.assertEqual(nasi(['mozc-00']), {})
+                with self.assertRaisesRegex(ValueError, 'No pairs'):
+                    jisyo.export(['mozc-00'], root/'mozc-only.tsv')
+
+    def test_katakana_rule_and_mozc_scale(self):
+        def order(key, rows, mozc=None):
+            return jisyo.nasi_candidates(key, rows, {'skk-l'}, mozc)
+        tokuzu = [('トクズ', 'sudachi-small', 1, 2000, None), ('土葛', 'skk-geo', 2, None, None), ('tokuzu', 'jawiki', 3, None, None)]
+        self.assertEqual(order('とくず', tokuzu), ['土葛', 'トクズ', 'tokuzu'])
+        self.assertEqual(order('とくず', tokuzu, {}), ['土葛', 'トクズ', 'tokuzu'])
+        self.assertEqual(order('とくず', tokuzu, {'トクズ': 5000}), ['トクズ', '土葛', 'tokuzu'])
+        # Near-zero kana costs are POS artifacts, not evidence (いく→イク 0 in Mozc).
+        self.assertEqual(order('とくず', tokuzu, {'トクズ': 0}), ['土葛', 'トクズ', 'tokuzu'])
+        self.assertEqual(order('とくず', tokuzu + [('トクズ', 'skk-l', 0, None, None)]), ['トクズ', '土葛', 'tokuzu'])
+        self.assertEqual(order('とくず', tokuzu + [('トクズ', 'jmdict', 4, None, None)]), ['トクズ', '土葛', 'tokuzu'])
+        tv = [('テレビ', 'sudachi-small', 1, 1500, None), ('電視', 'jmnedict', 2, None, None), ('てれび', 'jawiki', 3, None, None)]
+        self.assertEqual(order('てれび', tv, {'テレビ': 3607}), ['テレビ', '電視', 'てれび'])
+        self.assertEqual(order('てれび', tv + [('テレビ', 'jmdict', 4, None, 'ichi1')]), ['テレビ', '電視', 'てれび'])
+        # Kanji surfaces may use any Mozc cost; candidates come only from rows.
+        self.assertEqual(order('かく', [('核', 'sudachi-small', 1, 5000, None), ('各', 'sudachi-small', 2, 9000, None)],
+                               {'各': 0, '書く': 1451}), ['各', '核'])
+        knots = jisyo.MOZC_KNOTS
+        self.assertEqual([x for x, _ in knots], sorted({x for x, _ in knots}))
+        self.assertEqual([y for _, y in knots], sorted({y for _, y in knots}))
+        self.assertEqual(jisyo.mozc_cost(0), knots[0][1])
+        self.assertEqual(jisyo.mozc_cost(18318), knots[-1][1])
+        self.assertEqual(jisyo.mozc_cost(knots[3][0]), knots[3][1])
+        self.assertLess(jisyo.mozc_cost(knots[3][0]), jisyo.mozc_cost(knots[3][0] + 1))
+
+    def test_join_costs_merges_sorted_streams(self):
+        groups = [('あ', 1), ('い', 2), ('う', 3), ('お', 4)]
+        costs = [('あ', {'亜': 1}), ('いい', {'良い': 2}), ('う', {'有': 3}), ('え', {'絵': 4})]
+        self.assertEqual(list(jisyo.join_costs(groups, costs)),
+                         [('あ', 1, {'亜': 1}), ('い', 2, {}), ('う', 3, {'有': 3}), ('お', 4, {})])
 
 
 if __name__ == '__main__':

@@ -28,10 +28,13 @@ ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / 'data/raw'
 LOCK = ROOT / 'sources.lock.json'
 DB = ROOT / 'data/lexicon.sqlite3'
+KATAKANA, KANA = re.compile('[ァ-ヺー・ヽヾ]+'), re.compile('[ぁ-ゖァ-ヺー・ゝゞヽヾ]+')
 READING_SEPARATORS = str.maketrans('', '', '・、。「」【】')
 NS = {'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 # kind: SKK okuri-nasi/okuri-ari; scope: all, skk-only or migemo-only; cost: Sudachi; pri: JMdict priority tags.
 Entry = namedtuple('Entry', 'reading surface pos kind scope cost pri', defaults=('nasi', 'all', None, None))
+# Formats that only rank candidates: stored in the costs table, never in entries/exports as vocabulary.
+RANKING_FORMATS = {'mozc'}
 
 
 def request(url):
@@ -63,6 +66,7 @@ def catalog():
     """Resolve moving upstream references once. Downloads are pinned by SHA-256."""
     gh = 'https://api.github.com/repos/'
     skk_rev = remote_json(gh + 'skk-dev/dict/commits/master')['sha']
+    mozc_rev = remote_json(gh + 'google/mozc/commits/master')['sha']
     sudachi = remote_json(gh + 'WorksApplications/SudachiDict/releases/latest')['tag_name']
     if not re.fullmatch(r'v\d{8}', sudachi):
         raise ValueError(f'Unknown Sudachi version/CSV layout: {sudachi}; review before importing')
@@ -84,6 +88,11 @@ def catalog():
         add('sudachi-' + part, 'sudachi', f'https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/{sudachi[1:]}/{part}_lex.zip', sudachi,
             'Apache-2.0 AND bundled upstream notices', 'https://github.com/WorksApplications/SudachiDict',
             [base + 'LICENSE-2.0.txt', base + 'LEGAL'] + [base + name for name in additional_notices])
+    mozc = f'https://raw.githubusercontent.com/google/mozc/{mozc_rev}/'
+    for i in range(10):
+        add(f'mozc-{i:02}', 'mozc', mozc + f'src/data/dictionary_oss/dictionary{i:02}.txt', mozc_rev,
+            'BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only',
+            'https://github.com/google/mozc', [mozc + 'LICENSE', mozc + 'src/data/dictionary_oss/README.txt'])
     asset = next(a for a in wiki['assets'] if a['name'] == 'SKK-JISYO.jawiki')
     wiki_base = 'https://raw.githubusercontent.com/tokuhirom/jawiki-kana-kanji-dict/' + wiki['tag_name'] + '/'
     add('jawiki', 'skk', asset['browser_download_url'], wiki['tag_name'],
@@ -228,7 +237,11 @@ def parse_jmdict(stream, stats):
                 values = [s for s in forms if not restricted or s in restricted]
             tags = {p.text for p in reading.findall('re_pri')}
             for surface in values:
-                yield Entry(key, surface, pos, pri='|'.join(sorted(tags | kanji.get(surface, set()))) or None)
+                # A kanji form gets the tags its ke_pri shares with this reading's re_pri: 客 is news1 as きゃく, not as かく.
+                # A katakana reading's re_pri stays; candidate_rows moves it to that loanword spelling.
+                own = kanji.get(surface, set())
+                pri = own | tags if surface not in kanji or KATAKANA.fullmatch(key) else own & tags
+                yield Entry(key, surface, pos, pri='|'.join(sorted(pri)) or None)
         root.clear()
 
 
@@ -292,6 +305,17 @@ def rows(source, stats):
                     inflected = row[10] != '*' and not row[10].startswith('終止形')
                     yield Entry(unescape_sudachi(row[11]), unescape_sudachi(row[4]), '|'.join(row[5:11]),
                                 scope='migemo' if inflected else 'all', cost=int(row[3]))
+    elif fmt == 'mozc':
+        # reading, left id, right id, cost, surface[, flag]; flagged rows (SPELLING_CORRECTION) have misspelled readings.
+        with path.open(encoding='utf-8', newline='') as f:
+            for line in f:
+                row = line.rstrip('\n').split('\t')
+                if len(row) not in (5, 6) or not row[3].isdigit():
+                    raise ValueError('Unexpected Mozc dictionary layout')
+                if len(row) == 6:
+                    stats['mozc_flagged_row'] += 1
+                    continue
+                yield Entry(row[0], row[4], '', cost=int(row[3]))
     elif fmt == 'jmdict':
         with gzip.open(path) as f:
             yield from parse_jmdict(f, stats)
@@ -330,17 +354,23 @@ def ingest(sources):
         scope TEXT NOT NULL CHECK(scope IN ('all','skk','migemo')), rank INTEGER NOT NULL, cost INTEGER, pri TEXT,
         pos TEXT, original_reading TEXT, confidence TEXT NOT NULL DEFAULT 'upstream-provided',
         PRIMARY KEY(reading,surface,source,kind)) WITHOUT ROWID;
+      CREATE TABLE costs(reading TEXT, surface TEXT, source TEXT, cost INTEGER NOT NULL,
+        PRIMARY KEY(reading,surface,source)) WITHOUT ROWID;
     ''')
     # Repeated keys within a source keep the first rank/pos/reading, the lowest cost and the widest scope.
     insert = '''INSERT INTO entries(reading,surface,source,kind,scope,rank,cost,pri,pos,original_reading) VALUES (?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(reading,surface,source,kind) DO UPDATE SET rank=min(rank,excluded.rank),
         scope=CASE WHEN scope=excluded.scope THEN scope ELSE 'all' END,
         cost=coalesce(min(cost,excluded.cost),cost,excluded.cost), pri=coalesce(pri,excluded.pri)'''
+    # Ranking-only sources (Mozc): lowest cost per normalized reading/surface, e.g. over Mozc's POS ids.
+    insert_cost = '''INSERT INTO costs VALUES (?,?,?,?) ON CONFLICT(reading,surface,source) DO UPDATE SET cost=min(cost,excluded.cost)'''
     report = {}
     try:
         for source in sources:
             stats = Counter()
             con.execute('INSERT INTO sources VALUES (?,?)', (source['id'], json.dumps(source, ensure_ascii=False)))
+            ranking = source.get('format') in RANKING_FORMATS
+            table, statement = ('costs', insert_cost) if ranking else ('entries', insert)
             batch = []
             for rank, (reading, surface, pos, kind, scope, cost, pri) in enumerate(rows(source, stats)):
                 stats['parsed_pairs'] += 1
@@ -355,12 +385,13 @@ def ingest(sources):
                 if not surface or surface == '*' or any(unicodedata.category(c) in ('Cc', 'Cs') for c in surface):
                     stats['invalid_surface'] += 1
                     continue
-                batch.append((reading, surface, source['id'], kind, scope, rank, cost, pri, pos, original_reading))
+                batch.append((reading, surface, source['id'], cost) if ranking else
+                             (reading, surface, source['id'], kind, scope, rank, cost, pri, pos, original_reading))
                 if len(batch) >= 10000:
-                    con.executemany(insert, batch)
+                    con.executemany(statement, batch)
                     batch.clear()
-            con.executemany(insert, batch)
-            stats['unique_source_pairs'] = con.execute('SELECT COUNT(*) FROM entries WHERE source=?', (source['id'],)).fetchone()[0]
+            con.executemany(statement, batch)
+            stats['unique_source_pairs'] = con.execute(f'SELECT COUNT(*) FROM {table} WHERE source=?', (source['id'],)).fetchone()[0]
             if not stats['unique_source_pairs']:
                 raise ValueError(f"{source['id']} produced no vocabulary")
             report[source['id']] = dict(stats)
@@ -368,7 +399,8 @@ def ingest(sources):
             print(f"imported {source['id']}: {dict(stats)}", flush=True)
         report['totals'] = dict(readings=con.execute("SELECT COUNT(DISTINCT reading) FROM entries WHERE kind='nasi'").fetchone()[0],
                                 pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='nasi' GROUP BY reading,surface)").fetchone()[0],
-                                okuri_ari_pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='ari' GROUP BY reading,surface)").fetchone()[0])
+                                okuri_ari_pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='ari' GROUP BY reading,surface)").fetchone()[0],
+                                ranking_pairs=con.execute('SELECT COUNT(*) FROM (SELECT reading,surface FROM costs GROUP BY reading,surface)').fetchone()[0])
         con.close()
         tmp.replace(DB)
         write_json(ROOT / 'data/import-report.json', report)
@@ -448,18 +480,29 @@ def export(ids, output):
 
 
 # Okuri-nasi order: skk-l candidates in SKK-JISYO.L order, then a pseudo-cost on the Sudachi small_lex cost scale
-# (lower first), estimated from dictionary-internal signals only; scripts/eval_order.py measures it.
+# (lower first), estimated from dictionary signals (Mozc OSS costs are ranking-only); scripts/eval_order.py measures it.
 # JMdict nf01-06,07-12,..,43-48, other *1, other *2: median sudachi-small cost of the pairs having both, by best tag
 # (gai1 pooled with *1), made monotone by pooling adjacent violators.
 NF_COST = (6517, 7212, 7360, 7401, 7404, 7404, 7488, 7488)
 PRI_COST = {'1': 7736, '2': 7906}
 # sudachi-small costs katakana low for segmentation: JMdict pairs without priority, median non-katakana 7790 - katakana 2148.
 KATAKANA_SHIFT = 5642
+# Mozc OSS cost (lowest over its POS ids) -> sudachi-small cost: quantiles 1,2,5,10,15,..,95,98,99% of both costs over the
+# 117,750 normalized pairs having both (sudachi cost != 0; kana-only and ASCII surfaces excluded), first knot of each run
+# of equal Sudachi values kept (strictly increasing), linear in between, clamped outside. Derived once from Mozc a4541df.
+MOZC_KNOTS = ((2708, 5090), (3294, 5848), (4052, 6517), (4628, 6569), (4991, 7288), (5274, 7401), (5514, 7404), (5908, 7725),
+              (6082, 7864), (6417, 8302), (6585, 8995), (6759, 9219), (6945, 9428), (7139, 9770), (7370, 9813), (7614, 10376),
+              (7928, 10617), (9104, 11137), (10545, 11676), (10824, 11862))
+# Kana-only Mozc rows under this cost are function-word/affix POS artifacts (シマウ 0, ヲ 0, ツモリ 0), not usage.
+MOZC_KANA_FLOOR = 1000
+# Words missing from a selected Mozc are rarer than their Sudachi/JMdict signal: best hold-out shift (0-6000 tried).
+MOZC_ABSENT_SHIFT = 3000
 # Pairs without signal follow ~96% of sudachi-small costs, by source class; ASCII under kana keys after those.
 DEFAULT_COST = dict.fromkeys(['jmdict', 'skk-hukugougo', 'skk-law', 'skk-jis2004'], 12000) | dict.fromkeys(
     ['sudachi-small', 'sudachi-core', 'sudachi-notcore'], 13000) | dict.fromkeys(['skk-jinmei', 'skk-geo', 'skk-station', 'skk-propernoun'], 14000) | {
     'jmnedict': 15000, 'jawiki': 16000, 'jmed': 17000}
-OTHER_COST, ASCII_COST = 18000, 20000
+# Unevidenced katakana transliterations of the key go after every other non-ASCII candidate, before ASCII.
+OTHER_COST, TRANSLITERATION_COST, ASCII_COST = 18000, 19000, 20000
 
 
 def pri_cost(pri):
@@ -470,13 +513,30 @@ def pri_cost(pri):
     return PRI_COST['1' if any(t.endswith('1') for t in tags) else '2']
 
 
+def mozc_cost(cost):
+    """Mozc word cost on the sudachi-small scale: piecewise-linear over MOZC_KNOTS."""
+    for (x0, y0), (x1, y1) in zip(MOZC_KNOTS, MOZC_KNOTS[1:]):
+        if cost <= x1:
+            return round(y0 + (y1 - y0) * (max(cost, x0) - x0) / (x1 - x0))
+    return MOZC_KNOTS[-1][1]
+
+
 def signal_cost(surface, rows):
-    """Lowest sudachi-small cost or JMdict priority pseudo-cost; None without such a signal."""
+    """Pseudo-cost: Mozc cost when present, else sudachi-small cost or JMdict priority; None without such a signal."""
+    mozc = [mozc_cost(cost) for source, _, cost, _ in rows if source == 'mozc' and plausible_mozc(surface, cost)]
+    if mozc:
+        return min(mozc)
     signals = [pri_cost(pri) for source, _, _, pri in rows if source == 'jmdict' and pri]
     # Cost 0 marks irregular variants (ゐざる, たゝく), not frequent words; untagged katakana is shifted.
-    shift = KATAKANA_SHIFT if not signals and re.fullmatch('[ァ-ヺー・ヽヾ]+', surface) else 0
+    shift = KATAKANA_SHIFT if not signals and KATAKANA.fullmatch(surface) else 0
     signals += [cost + shift for source, _, cost, _ in rows if source == 'sudachi-small' and cost]
-    return min(signals, default=None)
+    # Selected Mozc lacks the word (rows ('mozc', 0, None, None)): rarer than its other signals suggest.
+    absent = MOZC_ABSENT_SHIFT if any(source == 'mozc' for source, _, _, _ in rows) else 0
+    return min(signals) + absent if signals else None
+
+
+def plausible_mozc(surface, cost):
+    return cost is not None and (cost >= MOZC_KANA_FLOOR or not KANA.fullmatch(surface))
 
 
 def candidate_order(key, surface, rows, skk_sources=()):
@@ -486,34 +546,67 @@ def candidate_order(key, surface, rows, skk_sources=()):
         return (0, min(ranks))
     cost, tie = signal_cost(surface, rows), ('', 0)
     if cost is None:
-        cost, source, rank = min((DEFAULT_COST.get(source, OTHER_COST), source, rank) for source, rank, _, _ in rows)
+        cost, source, rank = min((DEFAULT_COST.get(source, OTHER_COST), source, rank) for source, rank, _, _ in rows if source != 'mozc')
         tie = (source, rank if source in skk_sources else 0)
     if surface.isascii() and not key.isascii():
         cost = max(cost, ASCII_COST)
+    elif transliteration(key, surface, rows):
+        cost = max(cost, TRANSLITERATION_COST)
     # The kana spelling identical to the key goes last: SKK confirms it without conversion.
     # Ties: more source families (skk, sudachi, jmdict, ...) first, then SKK source order, then code points.
-    families = len({source.split('-')[0] for source, _, _, _ in rows})
+    families = len({source.split('-')[0] for source, _, _, _ in rows if source != 'mozc'})
     return (1 + (surface == key and not key.isascii()), cost, -families, *tie, surface)
 
 
-def candidate_rows(rows):
-    """{surface: [(source, rank, cost, pri)]} from rows (surface, source, rank, cost, pri[, original_reading])."""
+def transliteration(key, surface, rows):
+    """Katakana spelling of the key (トクズ for とくず) without JMdict or plausible Mozc evidence of being a word."""
+    return bool(KATAKANA.fullmatch(surface)) and search_key(surface) == key and not any(
+        source == 'jmdict' or source == 'mozc' and plausible_mozc(surface, cost) for source, _, cost, _ in rows)
+
+
+def candidate_rows(rows, mozc=None):
+    """{surface: [(source, rank, cost, pri)]} from rows (surface, source, rank, cost, pri[, original_reading]);
+    mozc: {surface: cost} of the key, attached as ('mozc', 0, cost, None) to existing candidates only."""
     rows = list(rows)
     by_surface = {row[0]: [] for row in rows}
     for surface, source, rank, cost, pri, *original in rows:
         # A JMdict katakana reading marks a loanword: its priority belongs to that spelling, not to ateji like 珈琲.
         if (source == 'jmdict' and pri and original and original[0] != surface and original[0] in by_surface
-                and re.fullmatch('[ァ-ヺー・ヽヾ]+', original[0])):
+                and KATAKANA.fullmatch(original[0])):
             by_surface[original[0]].append((source, rank, None, pri))
             pri = None
         by_surface[surface].append((source, rank, cost, pri))
+    if mozc is not None:
+        for surface, values in by_surface.items():
+            values.append(('mozc', 0, mozc.get(surface), None))
     return by_surface
 
 
-def nasi_candidates(key, rows, skk_sources=()):
-    """Candidates of one okuri-nasi key in output order; rows as for candidate_rows."""
-    by_surface = candidate_rows(rows)
+def nasi_candidates(key, rows, skk_sources=(), mozc=None):
+    """Candidates of one okuri-nasi key in output order; rows and mozc as for candidate_rows."""
+    by_surface = candidate_rows(rows, mozc)
     return sorted(by_surface, key=lambda s: candidate_order(key, s, by_surface[s], skk_sources))
+
+
+def ranking_costs(con, sources, selected):
+    """Stream (reading, {surface: lowest cost}) of the selected ranking-only sources, in reading order."""
+    ids = [s['id'] for s in sources if s['id'] in selected and s.get('format') in RANKING_FORMATS]
+    if not ids:
+        return iter(())
+    query = ('SELECT reading,surface,min(cost) FROM costs WHERE source IN (' + ','.join('?' * len(ids))
+             + ') GROUP BY reading,surface ORDER BY reading,surface')
+    return ((key, {surface: cost for _, surface, cost in rows})
+            for key, rows in itertools.groupby(con.execute(query, ids), key=lambda row: row[0]))
+
+
+def join_costs(groups, costs):
+    """Merge (key, rows) groups with (key, {surface: cost}); both ascend by key (SQLite BINARY = code point order)."""
+    costs = iter(costs)
+    current = next(costs, None)
+    for key, rows in groups:
+        while current and current[0] < key:
+            current = next(costs, None)
+        yield key, rows, current[1] if current and current[0] == key else {}
 
 
 def export_skk_tsv(ids, output):
@@ -530,14 +623,17 @@ def export_skk_tsv(ids, output):
     skk_sources = {s['id'] for s in sources if s.get('format') == 'skk'}
     query = ('SELECT reading,surface,source,rank,cost,pri,original_reading FROM entries' + where
              + " AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
-    nasi = (('nasi', key, surface) for key, rows in itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
-            for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources))
+    groups = itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
+    # A second cursor streams Mozc costs alongside; candidates still come only from entries.
+    nasi = (('nasi', key, surface) for key, rows, mozc in join_costs(groups, ranking_costs(con, sources, selected))
+            for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources, mozc))
     records = itertools.chain((('ari', key, surface) for key in sorted(ari, reverse=True)
                                for surface in sorted(ari[key], key=ari[key].get)), nasi)
     try:
         return write_export(output, records, sources, selected,
                             'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with candidates by source then source order; '
-                            'okuri-nasi keys ascending with skk-l candidates first in SKK-JISYO.L order, then by estimated cost (sudachi-small cost, JMdict priority, source defaults); normalization as the RustMigemo TSV')
+                            'okuri-nasi keys ascending with skk-l candidates first in SKK-JISYO.L order, then by estimated cost (Mozc OSS cost when selected and present, '
+                            'else sudachi-small cost/JMdict priority, source defaults); Mozc ranks only and adds no candidates; normalization as the RustMigemo TSV')
     finally:
         con.close()
 
@@ -602,8 +698,10 @@ def export_skk(tsv, output, release_headers=()):
     manifest = json.loads(Path(str(tsv) + '.manifest.json').read_text())
     manifest.update(format='SKK UTF-8 supplement with okuri-ari and okuri-nasi sections', skk=dict(stats),
                     sha256=digest(output), candidate_order='okuri-ari: skk-l first, then other sources in catalog order, each in source order; okuri-nasi: as in the input TSV '
-                                    '(jisyo.py: skk-l first in SKK-JISYO.L order, then ascending estimated cost from dictionary-internal signals: '
-                                    'sudachi-small cost, JMdict priority tags, per-source defaults; kana-identical candidates last); '
+                                    '(jisyo.py: skk-l first in SKK-JISYO.L order, then ascending estimated cost on the sudachi-small scale: '
+                                    'Mozc OSS word cost (ranking-only source, quantile-mapped) when selected and present, otherwise sudachi-small cost '
+                                    'or JMdict priority tags (+ a shift when missing from a selected Mozc), then per-source defaults; katakana spellings '
+                                    'of the key without JMdict/Mozc evidence after other words, ASCII after those, kana-identical candidates last); '
                                     'not measured usage frequency; use after personal/base SKK dictionaries',
                     exclusions='unrepresentable plain SKK keys/candidates omitted; no Lisp expressions emitted')
     write_json(str(output) + '.manifest.json', manifest)

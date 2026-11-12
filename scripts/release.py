@@ -20,9 +20,11 @@ import jisyo
 from release_metadata import LICENSES, archive_directory, release_identity, skk_headers, write_documents
 from verify_release import verify_archive
 
+# Mozc OSS (BSD-3-Clause + IPAdic/ICOT notices) only ranks SKK candidates; the CC-licensed profiles do not use or ship it.
+MOZC = [f'mozc-{i:02}' for i in range(10)]
 PROFILES = {
     'core': ['skk-l', 'skk-jinmei', 'skk-geo', 'skk-station', 'skk-propernoun',
-             'skk-law', 'skk-hukugougo', 'skk-jis2004', 'sudachi-small', 'sudachi-core', 'sudachi-notcore'],
+             'skk-law', 'skk-hukugougo', 'skk-jis2004', 'sudachi-small', 'sudachi-core', 'sudachi-notcore'] + MOZC,
     'edrdg': ['jmdict', 'jmnedict'],
     'medical': ['jmed'],
 }

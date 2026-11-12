@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from release_metadata import archive_directory, release_identity, skk_headers
+from release_metadata import LICENSES, archive_directory, release_identity, skk_headers
 from verify_release import REQUIRED, verify_archive
 import jisyo
 
@@ -80,6 +80,18 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn('GPL-3.0-only', (root/'first').read_text())
             self.assertTrue((root/'first').read_text().endswith(';; okuri-ari entries.\nあk /開/\n;; okuri-nasi entries.\nあ /亜/\n'))
             self.assertIn(info['corresponding_source_url'], (root/'first').read_text())
+
+    def test_mozc_ranks_gpl_profiles_only(self):
+        import release
+        lock = json.loads(jisyo.LOCK.read_text())['sources']
+        mozc = [s['id'] for s in lock if s['format'] in jisyo.RANKING_FORMATS]
+        self.assertEqual(mozc, release.MOZC)
+        self.assertEqual(len(mozc), 10)
+        for profile, ids in release.PROFILES.items():
+            used = set(mozc) & set(ids)
+            # CC-BY(-SA) profiles neither rank with nor ship Mozc; GPL profiles archive all ten files.
+            self.assertEqual(used, set(mozc) if LICENSES[profile] == 'GPL-3.0-only' else set(), profile)
+        self.assertEqual(set(release.PROFILES['edrdg'] + release.PROFILES['medical']) & set(mozc), set())
 
     def test_release_identity_rejects_unsafe_tag(self):
         with self.assertRaises(ValueError):

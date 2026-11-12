@@ -22,6 +22,7 @@
 - **JMdict / JMnedict**: 原データのCC-BY-SA-4.0、EDRDG・James William BREEN等の著作権・免責・帰属を保持します。allではCCが認めるCC BY-SA 4.0→GPLv3の一方向互換を、統合・編集した翻案物のAdapter's Licenseとして採用する方針です。原資料までGPLに置き換えるものではありません。単なる形式変換や集合物に互換規定が自動適用されるとは扱いません。独立したedrdg版はCC-BY-SA-4.0です。
 - **JMED-DICT mini**: CC-BY-4.0の出現形・出現形よみだけを利用し、原READMEを保持します。外部医療コードは含めません。対応ソースでは採用した語彙の編集可能なTSVを提供し、元ZIPのハッシュも記録します。
 - **jawiki**: **配布作者Tokuhiro MatsunoのMIT指定を採用**します。その著作権付きMIT本文と、Wikipediaの軽微利用とする作者の説明を取得版READMEのまま保持します。WikipediaのCC条件を別途根拠にして再構成したデータではなく、記事・履歴単位の帰属を収集したと主張しません。
+- **Mozc OSS辞書**: GoogleのMozcはBSD-3-Clauseで、`src/data/dictionary*` には上流LICENSEのとおりIPAdic（奈良先端科学技術大学院大学）の著作権表示・許諾文・免責、ICOT Free Softwareの条件（NO WARRANTY条項の表示）、沖縄辞書のPublic Domain表示が加わります。本プロジェクトは単語コストからSKK送りなし候補の順を決めるためだけに使い、Mozcの読み・表記を語彙として出力しません。いずれも告知・免責の保持を求める許容型の条件で、GPL-3.0-onlyの統合辞書（all/core）と両立します。原ファイルは未変更で対応ソースに同梱し、LICENSEと辞書READMEの全文を `UPSTREAM_NOTICES/mozc-*/` に保持します。edrdg・medical版では使用も同梱もしません。
 - **Rust依存**: 固定版のMITまたは選択ライセンスのMIT側を使用し、著作権付き原文とその他の既存告知を保持します。対応ソースにはCargo.lockとvendorを含めます。コンパイル済み生成ツール自体は配布しません。
 
 ## 帰属・変更・対応ソース

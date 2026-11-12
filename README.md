@@ -32,6 +32,7 @@ cargo run --release --locked -- query dist/migemo-compact-dict kensaku 検索
 | `jawiki` | [jawiki-kana-kanji-dict](https://github.com/tokuhirom/jawiki-kana-kanji-dict)：Wikipediaの新語・百科事典語彙 | 作者はMITと説明。Wikipedia抽出の判断をREADMEに記載 |
 | `jmdict`, `jmnedict` | [EDRDG](https://www.edrdg.org/)：一般語・異表記・人名等 | [CC BY-SA 4.0と告知](https://www.edrdg.org/edrdg/licence.html) |
 | `jmed` | [NAIST JMED-DICT mini](https://sociocom.naist.jp/download/jmed-dict-mini/)：医学・医薬品・身体部位 | CC BY 4.0。本実装は出現形・出現形よみのみ利用 |
+| `mozc-00`〜`mozc-09` | [Mozc](https://github.com/google/mozc)のOSS辞書 `dictionary00.txt`〜`09.txt`：単語コスト。**SKK送りなし候補の並べ替えだけに使い、語彙は追加しません** | BSD-3-Clause＋IPAdic（NAIST）・ICOTの条件、沖縄辞書（Public Domain） |
 
 NEologdの単独取り込みは未実装です（SudachiDictが含む部分は入ります）。インターネット上の全語を網羅するものではなく、新語の鮮度は各配布元の更新に依存します。
 
@@ -51,7 +52,7 @@ python3 jisyo.py list
 
 JMdict等は同じURLが更新されます。古いスナップショットが手元になく、配布元も古いデータを提供しない場合、ロックと同一の再取得はできません。その場合は黙って最新版に差し替えず失敗します。完全再現には `data/raw/` とロックを一緒に保管してください。`--update` は明示的な版の切替です。
 
-SudachiのCSVレイアウトは20260723形式を対象としています。将来版でURL・形式が変わった場合はエラーにして変換処理の確認を求めます。
+SKK辞書とMozcは `fetch --update` でそれぞれmasterの最新コミットを選び、そのコミットのraw URLに固定します。SudachiのCSVレイアウトは20260723形式を対象としています。将来版でURL・形式が変わった場合はエラーにして変換処理の確認を求めます。
 
 ## 出典を選んで生成
 
@@ -71,7 +72,7 @@ python3 jisyo.py export --sources jawiki --output dist/jawiki.tsv
 ## 保存先
 
 - `data/raw/<source>/`：取得した元データ、告知、取得記録
-- `data/lexicon.sqlite3`：検索用読み・元の読み・表記・出典・品詞・読みの由来を保存する共通マスタ。SKKの送りなし/送りあり（`kind`）、両形式・SKKのみ・RustMigemoのみの区別（`scope`）、出典内の出現順（`rank`）、Sudachiのコスト（`cost`）、JMdictの優先度タグ（`pri`）も保持
+- `data/lexicon.sqlite3`：検索用読み・元の読み・表記・出典・品詞・読みの由来を保存する共通マスタ。SKKの送りなし/送りあり（`kind`）、両形式・SKKのみ・RustMigemoのみの区別（`scope`）、出典内の出現順（`rank`）、Sudachiのコスト（`cost`）、JMdictの優先度タグ（`pri`）も保持。順位付け専用のMozcは語彙表 `entries` に入れず、同じ正規化をした読み・表記ごとの最小コストを別表 `costs` に保存
 - `data/import-report.json`：出典ごとの取り込み数、重複排除後の組数、除外理由・件数、全体のユニーク数
 - `dist/migemo-compact-dict.tsv`：UTF-8の「読み TAB 表記」。同じ組を重複排除し、安定ソート
 - `dist/migemo-compact-dict`：検索エンジンに渡すバイナリ
@@ -86,7 +87,8 @@ python3 jisyo.py export --sources jawiki --output dist/jawiki.tsv
 - 読みだけをNFKC・小文字化・カタカナ→ひらがなに正規化します。検索キーから `・、。「」【】` を除去し、たとえば `アーガイル・チェック` を `あーがいるちぇっく` で検索できます。元の読みは `original_reading` に保持し、変換件数は `separator_joined_pairs` に記録します。表記の全角・半角・異体字を勝手に統一しません。
 - RustMigemoの対応キーはASCII（U+0020–007E）、ひらがな（U+3041–3096）、長音符です。それ以外は件数を記録して除外。空読み、欠損の `*`、制御文字を含む表記も除外します。
 - Sudachiでは表示用表記（列4）と対応する読み（列11）を採用します。Unicodeエスケープを復元し、原形への置換や読みの推測はしません。活用形（列10）が `*` でも `終止形` で始まる形でもない行（`かか→書か` などの活用形）はRustMigemo専用（`scope=migemo`）とし、SKK出力には入れません。同じ出典の原形・無活用の行にも同じ組があれば両形式に残します。
-- JMdict/JMnedictの `re_restr` を守り、`re_nokanji` は漢字と結び付けません。読み・表記の無条件な総当たりはしません。
+- JMdict/JMnedictの `re_restr` を守り、`re_nokanji` は漢字と結び付けません。読み・表記の無条件な総当たりはしません。漢字表記の優先度タグ（`pri`）はその表記の `ke_pri` のうちその読みの `re_pri` にもあるものだけです（`客` の `news1` は `きゃく` のもので `かく` には付けません）。読みと同じ表記（かな語）とカタカナ読みの外来語には読みの `re_pri` を付けます。
+- Mozc OSS辞書は「読み・左文脈ID・右文脈ID・コスト・表記」のTSVです。同じ読み・表記が品詞IDごとに複数行あるため最小コストを採り、読みは他の出典と同じく正規化します。誤読入力用の `SPELLING_CORRECTION` 行は除外します。RustMigemo出力・SKK出力の語彙には一切使いません。
 - SKKの注釈を落とし、数値テンプレート（`#` を含む見出し）の項目、Lisp式の候補、送り仮名ブロック `[…]` の候補を除外します。式は実行しません。Lisp式・送り仮名ブロックを含む行でも通常候補は候補単位で残しますが、SKK専用（`scope=skk`）としRustMigemo出力には加えません。
 - SKKの送りあり項目（`おおk` や接辞の `>わたs` など）は全SKK形式入力から `kind=ari`・`scope=skk` として取り込み、SKK出力の送りあり部にだけ使います。送りなし部にある送り仮名形の見出しや、送りあり部にある送り仮名のない見出しは除外します。SKK送り仮名からの活用展開は未実装です。
 - JMEDのリンク先コード・外部医療コードは取り込みません。XLSXはセル値のみ読み、式や外部リンクを実行しません。
@@ -113,11 +115,11 @@ cargo test --locked
 cargo fmt --check
 ```
 
-読み制限、SKKの特殊構文と送りあり項目の往復・降順、送りなし候補の推定順（skk-l優先・コスト・優先度タグ・既定値・調整・決定性・出典選択）、候補単位の除外、Sudachi活用形のSKK除外、出現順・コスト・優先度タグの保存、JMdictの対応制限、Sudachiのエスケープ、XLSXの疎なセル、重複排除と出典保持、取り込み失敗時の既存DB保持、補助漢字を含むバイナリ往復を検証します。
+読み制限、SKKの特殊構文と送りあり項目の往復・降順、送りなし候補の推定順（skk-l優先・Mozcの有無・コスト・優先度タグ・既定値・カタカナ音写の扱い・調整・決定性・出典選択）、Mozcの読み込み（組ごとの最小コスト・正規化）と語彙を増やさないこと、edrdg/medicalがMozcを使わないこと、候補単位の除外、Sudachi活用形のSKK除外、出現順・コスト・優先度タグの保存、JMdictの対応制限、Sudachiのエスケープ、XLSXの疎なセル、重複排除と出典保持、取り込み失敗時の既存DB保持、補助漢字を含むバイナリ往復を検証します。
 
 ## この環境での生成確認（2026-09-24）
 
-`sources.lock.json` の15入力ファイルを使い、**2,619,763読み・3,826,995組**を統合しました。全入りバイナリは **48,415,103 bytes**、生成後の全組読み戻しが成功しています。取得版はSudachiDict v20260723、jawiki v2026.09.21.185756、JMdict/JMnedict 2026-09-23 UTC取得、JMED-DICT mini v1.1.2です。
+当時の `sources.lock.json` の15入力ファイル（Mozc追加前）を使い、**2,619,763読み・3,826,995組**を統合しました。全入りバイナリは **48,415,103 bytes**、生成後の全組読み戻しが成功しています。取得版はSudachiDict v20260723、jawiki v2026.09.21.185756、JMdict/JMnedict 2026-09-23 UTC取得、JMED-DICT mini v1.1.2です。
 
 このMacでの一回の実測では、TSV出力とコンパイルを含むbuild全体が約105秒、Rustの生成・全件検証が約79秒、最大RSSは約1.25 GBでした。性能の保証値ではありません。医学単独版 `dist/medical` も138,326組・2,924,096 bytesで全件検証済みです。
 
@@ -143,18 +145,20 @@ python3 jisyo.py skk --sources jmed --output dist/SKK-JISYO.medical.utf8
 
 SKK出力は**送りあり・送りなしの両方を持つ補完辞書**です。UTF-8で、標準のSKK辞書と同じく `;; okuri-ari entries.` 部を見出しの降順、`;; okuri-nasi entries.` 部を見出しの昇順に並べ、同じ見出しの候補を一行に統合します。共通マスタから、出力と同じ順の中間ファイル `<output>.skk.tsv` を作ってからSKK形式へ変換します。送りありの候補はskk-lを先頭に、以降は出典の登録順、各出典内では元の出現順です。個人辞書・公式Lの後ろに追加してください。
 
-送りなしの候補は、よく使われそうな順を**辞書内部の情報だけから推定**して並べます。コーパスでの実測頻度ではなく、追加のダウンロードや生成AIによる採点も行いません。同じ入力なら出力は常にバイト単位で一致します。
+送りなしの候補は、よく使われそうな順を**辞書が持つ情報だけから推定**して並べます。主な信号はMozc OSS辞書の単語コスト（かな漢字変換用に付けられたもの）で、Mozcは順位付けだけに使い候補を増やしません。コーパスでの実測頻度ではなく、生成AIによる採点も行いません。同じ入力なら出力は常にバイト単位で一致します。
 
 1. SKK-JISYO.L（skk-l）にある候補は、Lと完全に同じ順で先頭に置きます。
-2. 残りの候補は、Sudachi small辞書のコスト尺度（小さいほど優先）にそろえた推定コストの昇順です。複数の出典にある候補は最小値を使います。
+2. 残りの候補は、Sudachi small辞書のコスト尺度（小さいほど優先）にそろえた推定コストの昇順です。
+   - Mozcに同じ読み・表記の行があれば、そのコスト（品詞IDごとの最小値）を固定の単調な対応表（`jisyo.py` の `MOZC_KNOTS`。両方のコストを持つ漢字表記の組の分位点を一度だけ対応付けたもの）でSudachi尺度に換算し、それだけを使います。ただしかなだけの表記でコスト1000未満の行（`いく→イク` 0、`シマウ` 0 など機能語・接辞の品詞による値）は信号とみなしません。
+   - Mozcにない候補は次のSudachi・JMdictの信号の最小値を使い、Mozcを選択している場合はMozcにないこと自体を低頻度の手がかりとして一定値（`MOZC_ABSENT_SHIFT`）を加えます。
    - sudachi-smallのコスト。ただしコスト0（`ゐざる`・`たゝく` などの異表記）は信号なしとみなします。sudachi-core/notcoreのコストは概数の仮値が多いため使いません。
    - JMdictの優先度タグ（`pri`）。nf01〜nf48を6つずつ8段階に分けたもの、nfのないnews1/ichi1/spec1/gai1とnews2/ichi2/spec2/gai2を、両方を持つ語のsudachi-smallコストの中央値（単調になるよう平滑化）へ対応付けた固定表（`jisyo.py` の `NF_COST`・`PRI_COST`）で換算します。JMdictで読みがカタカナの語（外来語）の優先度タグは、当て字の表記（`珈琲`）ではなく同じ見出しのカタカナ表記（`コーヒー`）の候補に付け替えます。
    - Sudachiはカタカナ語に分割用の低いコストを付けるため、JMdictの優先度タグがないカタカナだけの候補は、そのコストに一定値（`KATAKANA_SHIFT`）を加えます。優先度タグのある `コーヒー` などはそのままです。
    - 信号のない候補は出典ごとの既定値で、信号のある一般的な候補の後ろに次の順で並びます：JMdict（タグなし）・SKK複合語/法律/JIS2004 → sudachi-small/core/notcore → SKK人名/地名/駅名/固有名詞 → JMnedict → jawiki → JMED。SKK形式の出典内では元の出現順を保ちます。
-3. かな見出しの下のASCII英字だけの候補（skk-lにないもの）は、信号のある候補・既定値の候補の後ろへ回します。見出しと同じひらがなの候補は変換の意味がないため最後に置きます。
-4. 推定コストが同じ場合は、収録する出典系統（skk・sudachi・jmdict・jmnedict・jawiki・jmed）が多い候補、SKK形式の出典内の順、文字コード順の順です。
+3. 見出しをカタカナにしただけの候補（`とくず` の `トクズ`、skk-lにないもの）は、JMdictの項目かMozcの妥当なコストの行という裏付けがなければ単なる音写とみなし、ほかの候補の後ろ・ASCII英字候補の前に置きます。`こーひー→コーヒー`、`てれび→テレビ`、`あるごりずむ→アルゴリズム` のような外来語は裏付けがあるため先頭に来ます。かな見出しの下のASCII英字だけの候補（skk-lにないもの）はその後ろです。見出しと同じひらがなの候補は変換の意味がないため最後に置きます。
+4. 推定コストが同じ場合は、収録する出典系統（skk・sudachi・jmdict・jmnedict・jawiki・jmed。Mozcは数えません）が多い候補、SKK形式の出典内の順、文字コード順の順です。
 
-`--sources` で出典を絞った場合も同じ規則で、選ばれた出典の信号だけを使います（edrdgはJMdictの優先度タグと既定値、medicalは文字コード順）。`python3 scripts/eval_order.py --skk-l data/raw/skk-l/source --db data/lexicon.sqlite3` で、skk-lを除いた推定コストがSKK-JISYO.Lの候補順とどの程度一致するか（辞書順との比較）、先頭候補がかな・英字だけの見出し数、代表的な見出しの先頭候補を確認できます。
+`--sources` で出典を絞った場合も同じ規則で、選ばれた出典の信号だけを使います（Mozcを含めなければMozcのコストもMozcにないことによる加算も使いません。edrdgはJMdictの優先度タグと既定値、medicalは文字コード順）。Mozcだけを選んでも語彙がないため出力は空です。`python3 scripts/eval_order.py --skk-l data/raw/skk-l/source --db data/lexicon.sqlite3` で、skk-lを除いた推定コストがSKK-JISYO.Lの候補順とどの程度一致するか（辞書順との比較）、先頭候補がかな・英字だけの見出し数、代表的な見出しの先頭候補を確認できます。
 
 SKKで構文になる `/ ; # [ ]` を含む候補、`(` で始まる候補、空白や特殊文字を含むキー、送りなし部で送り仮名キーと誤解される見出し、送りあり部で送り仮名の付かない見出しは除外し、件数を `.manifest.json` に記録します。`pairs` は中間TSVの行数、実際のSKK候補数は `skk.pairs`（送りあり `skk.ari_pairs`、送りなし `skk.nasi_pairs`）です。任意の文字列をLisp式へ変換して出力することはありません。Sudachiの活用形とSKKの送りあり・救済候補の扱いが異なるため、SKK出力の候補数はRustMigemo出力と一致しません。
 
@@ -164,8 +168,8 @@ SKKで構文になる `/ ; # [ ]` を含む候補、`(` で始まる候補、空
 
 | Profile | 内容 | RustMigemo asset | SKK asset |
 | --- | --- | --- | --- |
-| all | 全15入力。jawikiも含む | `migemo-compact-dict` | `SKK-JISYO.myhugejisyo.utf8` |
-| core | SKK＋Sudachi-full | `migemo-compact-dict-core` | `SKK-JISYO.myhugejisyo-core.utf8` |
+| all | 全25入力（うちMozc OSSの10ファイルは候補順だけに使用）。jawikiも含む | `migemo-compact-dict` | `SKK-JISYO.myhugejisyo.utf8` |
+| core | SKK＋Sudachi-full（Mozc OSSを候補順だけに使用） | `migemo-compact-dict-core` | `SKK-JISYO.myhugejisyo-core.utf8` |
 | edrdg | JMdict＋JMnedict | `migemo-compact-dict-edrdg` | `SKK-JISYO.myhugejisyo-edrdg.utf8` |
 | medical | JMED-DICT mini | `migemo-compact-dict-medical` | `SKK-JISYO.myhugejisyo-medical.utf8` |
 

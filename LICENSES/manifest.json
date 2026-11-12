@@ -331,6 +331,22 @@
       "source_url": "https://sudachi.s3.ap-northeast-1.amazonaws.com/sudachidict-raw/20260723/small_lex.zip",
       "sha256": "725a8776b38e058b185e905594bc9a2437dbf3787df022fffeefedb9a84e4665",
       "bytes": 6037
+    },
+    {
+      "file": "third_party/licenses/mozc/notice-0.txt",
+      "source_id": "mozc-00 .. mozc-09",
+      "source_version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "source_url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+      "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c",
+      "bytes": 5734
+    },
+    {
+      "file": "third_party/licenses/mozc/notice-1.txt",
+      "source_id": "mozc-00 .. mozc-09",
+      "source_version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "source_url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+      "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac",
+      "bytes": 5750
     }
   ]
 }

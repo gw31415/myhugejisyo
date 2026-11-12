@@ -206,6 +206,286 @@
       ]
     },
     {
+      "id": "mozc-00",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary00.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "9e07ce292932c4fff327ed8cb06274c09acca556bd8bdf7c7ef1f6173eae3b61",
+      "bytes": 7157174,
+      "fetched_at": "2026-11-12T10:55:10.099179+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-01",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary01.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "836fd5fd8399510de0d8ef7b33be913cca6bbaee7b712cc8045fba03f4c75a89",
+      "bytes": 6428663,
+      "fetched_at": "2026-11-12T10:55:10.171773+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-02",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary02.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "93943858d0cfd092b849a78def6901eaf228177e1ac5663544e865a3a1e45a9e",
+      "bytes": 6480134,
+      "fetched_at": "2026-11-12T10:55:10.128686+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-03",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary03.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "cb9f1b0b4a7550d682d86244a021cd17e0b15366328819e69135b5f183a1a24b",
+      "bytes": 7434257,
+      "fetched_at": "2026-11-12T10:55:10.130745+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-04",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary04.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "9fdc4e3948d03463de13ab5782adffbc11dd06e934cb80138c5920029cd3d2f6",
+      "bytes": 5399172,
+      "fetched_at": "2026-11-12T10:55:10.623051+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-05",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary05.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "199e3b0f050b691823ae7ba943090d437f51af6436b27c5f3dc69cafa12000e4",
+      "bytes": 5316454,
+      "fetched_at": "2026-11-12T10:55:10.675721+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-06",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary06.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "b95b14f7770ae2a824bc8e9fad8b03c1bc45c504f93a36554b8b56daa0368d2a",
+      "bytes": 5373350,
+      "fetched_at": "2026-11-12T10:55:10.860737+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-07",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary07.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "7f53649b529d4c8c495d3a8dd9c4d489dfe7696080f7423107ff01331174be48",
+      "bytes": 5315756,
+      "fetched_at": "2026-11-12T10:55:10.960594+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-08",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary08.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "50a31bb5fc1646721b00be371a5695dffab1292bda143e1e59cc70cbbdd8643f",
+      "bytes": 4887114,
+      "fetched_at": "2026-11-12T10:55:11.204139+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
+      "id": "mozc-09",
+      "format": "mozc",
+      "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/dictionary09.txt",
+      "version": "a4541df29db443b49f81cf54665873b68fde9efa",
+      "license": "BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only",
+      "homepage": "https://github.com/google/mozc",
+      "notices": [
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+        "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt"
+      ],
+      "sha256": "4e5fcd4cbfbf11395166a37b506f547fc54d20edc0884f5184ecd3fc705f0d9a",
+      "bytes": 6690572,
+      "fetched_at": "2026-11-12T10:55:11.256811+00:00",
+      "last_modified": null,
+      "notice_files": [
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/LICENSE",
+          "file": "notice-0.txt",
+          "sha256": "44cdd923b91ea9199293abecc2762c70c87dbf1e581c027a94c416368d1a648c"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
+          "file": "notice-1.txt",
+          "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac"
+        }
+      ]
+    },
+    {
       "id": "jawiki",
       "format": "skk",
       "url": "https://github.com/tokuhirom/jawiki-kana-kanji-dict/releases/download/v2026.09.21.185756/SKK-JISYO.jawiki",
