@@ -81,17 +81,18 @@ class ReleaseTests(unittest.TestCase):
             self.assertTrue((root/'first').read_text().endswith(';; okuri-ari entries.\nあk /開/\n;; okuri-nasi entries.\nあ /亜/\n'))
             self.assertIn(info['corresponding_source_url'], (root/'first').read_text())
 
-    def test_mozc_ranks_gpl_profiles_only(self):
+    def test_ranking_sources_gpl_profiles_only(self):
         import release
         lock = json.loads(jisyo.LOCK.read_text())['sources']
-        mozc = [s['id'] for s in lock if s['format'] in jisyo.RANKING_FORMATS]
-        self.assertEqual(mozc, release.MOZC)
-        self.assertEqual(len(mozc), 10)
+        ranking = [s['id'] for s in lock if s['format'] in jisyo.RANKING_FORMATS]
+        self.assertEqual(ranking, release.RANKING)
+        self.assertEqual(release.RANKING, release.MOZC + ['clickstream'])
+        self.assertEqual(len(release.MOZC), 10)
         for profile, ids in release.PROFILES.items():
-            used = set(mozc) & set(ids)
-            # CC-BY(-SA) profiles neither rank with nor ship Mozc; GPL profiles archive all ten files.
-            self.assertEqual(used, set(mozc) if LICENSES[profile] == 'GPL-3.0-only' else set(), profile)
-        self.assertEqual(set(release.PROFILES['edrdg'] + release.PROFILES['medical']) & set(mozc), set())
+            used = set(ranking) & set(ids)
+            # CC-BY(-SA) profiles neither rank with nor ship Mozc or Clickstream; GPL profiles archive all eleven files.
+            self.assertEqual(used, set(ranking) if LICENSES[profile] == 'GPL-3.0-only' else set(), profile)
+        self.assertEqual(set(release.PROFILES['edrdg'] + release.PROFILES['medical']) & set(ranking), set())
 
     def test_release_identity_rejects_unsafe_tag(self):
         with self.assertRaises(ValueError):

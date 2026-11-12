@@ -36,8 +36,10 @@ NS = {'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
 # inf: JMdict ke_inf/re_inf codes; confidence: 'rule-generated' for okuri-ari entries derived by OKURI rules below.
 Entry = namedtuple('Entry', 'reading surface pos kind scope cost pri inf confidence',
                    defaults=('nasi', 'all', None, None, None, 'upstream-provided'))
-# Formats that only rank candidates: stored in the costs table, never in entries/exports as vocabulary.
-RANKING_FORMATS = {'mozc'}
+# Formats that only rank candidates, never in entries/exports as vocabulary: Mozc costs per reading/surface (costs table),
+# Wikipedia Clickstream clicks per article title (clicks table; no readings).
+RANKING_FORMATS = {'mozc', 'clickstream'}
+CLICKSTREAM = 'https://dumps.wikimedia.org/other/clickstream/'
 GENERATED = 'rule-generated'
 # JMdict form tags: search-only forms stay in RustMigemo only; irregular/rare/outdated forms are demoted in SKK order.
 SEARCH_ONLY, IRREGULAR = {'sK', 'sk'}, {'iK', 'ik', 'oK', 'ok', 'rK', 'rk'}
@@ -94,6 +96,20 @@ def write_json(path, value):
     tmp.replace(path)
 
 
+def clickstream_month(index, listing, tries=3):
+    """Newest YYYY-MM in the Clickstream index HTML whose month listing (listing(month) -> HTML) has the jawiki file; a new
+    month directory is created before every wiki's file is published, so older months are tried next."""
+    for month in sorted(set(re.findall(r'href="(\d{4}-\d{2})/"', index)), reverse=True)[:tries]:
+        if f'href="clickstream-jawiki-{month}.tsv.gz"' in listing(month):
+            return month
+    raise ValueError(f'No jawiki Clickstream file in the newest {tries} months of {CLICKSTREAM}')
+
+
+def remote_text(url):
+    with request(url) as r:
+        return r.read().decode()
+
+
 def catalog():
     """Resolve moving upstream references once. Downloads are pinned by SHA-256."""
     gh = 'https://api.github.com/repos/'
@@ -125,6 +141,10 @@ def catalog():
         add(f'mozc-{i:02}', 'mozc', mozc + f'src/data/dictionary_oss/dictionary{i:02}.txt', mozc_rev,
             'BSD-3-Clause AND IPAdic (NAIST/ICOT) terms AND public-domain Okinawa dictionary; costs used for candidate order only',
             'https://github.com/google/mozc', [mozc + 'LICENSE', mozc + 'src/data/dictionary_oss/README.txt'])
+    month = clickstream_month(remote_text(CLICKSTREAM), lambda m: remote_text(f'{CLICKSTREAM}{m}/'))
+    add('clickstream', 'clickstream', f'{CLICKSTREAM}{month}/clickstream-jawiki-{month}.tsv.gz', month,
+        'CC0-1.0 (Wikimedia Analytics datasets); article title click counts used for candidate order only',
+        'https://meta.wikimedia.org/wiki/Research:Wikipedia_clickstream', [CLICKSTREAM + 'readme.html', 'https://dumps.wikimedia.org/legal.html'])
     asset = next(a for a in wiki['assets'] if a['name'] == 'SKK-JISYO.jawiki')
     wiki_base = 'https://raw.githubusercontent.com/tokuhirom/jawiki-kana-kanji-dict/' + wiki['tag_name'] + '/'
     add('jawiki', 'skk', asset['browser_download_url'], wiki['tag_name'],
@@ -482,6 +502,15 @@ def rows(source, stats):
                     stats['mozc_flagged_row'] += 1
                     continue
                 yield Entry(row[0], row[4], '', cost=int(row[3]))
+    elif fmt == 'clickstream':
+        # prev, curr, type (link/external/other), n: monthly jawiki (referrer, article) pairs with n >= 10. Every row counts
+        # toward its article (curr) title, spaces written as _; readings do not exist.
+        with gzip.open(path, 'rt', encoding='utf-8', newline='') as f:
+            for line in f:
+                row = line.rstrip('\n').split('\t')
+                if len(row) != 4 or row[2] not in ('link', 'external', 'other') or not row[3].isdigit():
+                    raise ValueError('Unexpected Clickstream layout')
+                yield Entry('', row[1].replace('_', ' '), '', cost=int(row[3]))
     elif fmt == 'jmdict':
         with gzip.open(path) as f:
             yield from parse_jmdict(f, stats)
@@ -524,6 +553,7 @@ def ingest(sources):
         PRIMARY KEY(reading,surface,source,kind)) WITHOUT ROWID;
       CREATE TABLE costs(reading TEXT, surface TEXT, source TEXT, cost INTEGER NOT NULL,
         PRIMARY KEY(reading,surface,source)) WITHOUT ROWID;
+      CREATE TABLE clicks(surface TEXT, source TEXT, clicks INTEGER NOT NULL, PRIMARY KEY(surface,source)) WITHOUT ROWID;
     ''')
     # Repeated keys within a source keep the first rank/pos/reading, the lowest cost and the widest scope; JMdict form tags
     # (inf) keep only the tags every occurrence has, so a pair is demoted only if all its JMdict rows are irregular.
@@ -535,28 +565,31 @@ def ingest(sources):
         inf=common_tags(inf,excluded.inf)'''
     # Ranking-only sources (Mozc): lowest cost per normalized reading/surface, e.g. over Mozc's POS ids.
     insert_cost = '''INSERT INTO costs VALUES (?,?,?,?) ON CONFLICT(reading,surface,source) DO UPDATE SET cost=min(cost,excluded.cost)'''
+    # Clickstream: clicks summed per article title.
+    insert_clicks = '''INSERT INTO clicks VALUES (?,?,?) ON CONFLICT(surface,source) DO UPDATE SET clicks=clicks+excluded.clicks'''
     report = {}
     try:
         for source in sources:
             stats = Counter()
             con.execute('INSERT INTO sources VALUES (?,?)', (source['id'], json.dumps(source, ensure_ascii=False)))
-            ranking = source.get('format') in RANKING_FORMATS
-            table, statement = ('costs', insert_cost) if ranking else ('entries', insert)
+            ranking, titles = source.get('format') in RANKING_FORMATS, source.get('format') == 'clickstream'
+            table, statement = ('clicks', insert_clicks) if titles else ('costs', insert_cost) if ranking else ('entries', insert)
             batch = []
             for rank, (reading, surface, pos, kind, scope, cost, pri, inf, confidence) in enumerate(rows(source, stats)):
                 stats['parsed_pairs'] += 1
-                original_reading = reading
-                normalized = normalize(reading)
-                reading = search_key(reading)
-                if reading != normalized:
-                    stats['separator_joined_pairs'] += 1
-                if reading == '*' or not supported(reading):
-                    stats['unsupported_reading'] += 1
-                    continue
+                if not titles:
+                    original_reading = reading
+                    normalized = normalize(reading)
+                    reading = search_key(reading)
+                    if reading != normalized:
+                        stats['separator_joined_pairs'] += 1
+                    if reading == '*' or not supported(reading):
+                        stats['unsupported_reading'] += 1
+                        continue
                 if not surface or surface == '*' or any(unicodedata.category(c) in ('Cc', 'Cs') for c in surface):
                     stats['invalid_surface'] += 1
                     continue
-                batch.append((reading, surface, source['id'], cost) if ranking else
+                batch.append((surface, source['id'], cost) if titles else (reading, surface, source['id'], cost) if ranking else
                              (reading, surface, source['id'], kind, scope, rank, cost, pri, pos, original_reading, inf, confidence))
                 if len(batch) >= 10000:
                     con.executemany(statement, batch)
@@ -576,7 +609,8 @@ def ingest(sources):
                                 okuri_ari_pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='ari' GROUP BY reading,surface)").fetchone()[0],
                                 okuri_ari_generated_only_pairs=con.execute("SELECT COUNT(*) FROM (SELECT reading,surface FROM entries WHERE kind='ari' "
                                                                            f"GROUP BY reading,surface HAVING max(confidence)='{GENERATED}')").fetchone()[0],
-                                ranking_pairs=con.execute('SELECT COUNT(*) FROM (SELECT reading,surface FROM costs GROUP BY reading,surface)').fetchone()[0])
+                                ranking_pairs=con.execute('SELECT COUNT(*) FROM (SELECT reading,surface FROM costs GROUP BY reading,surface)').fetchone()[0],
+                                ranking_titles=con.execute('SELECT COUNT(DISTINCT surface) FROM clicks').fetchone()[0])
         con.close()
         tmp.replace(DB)
         write_json(ROOT / 'data/import-report.json', report)
@@ -681,6 +715,15 @@ DEFAULT_COST = dict.fromkeys(['jmdict', 'skk-hukugougo', 'skk-law', 'skk-jis2004
 OTHER_COST, TRANSLITERATION_COST, ASCII_COST = 18000, 19000, 20000
 # Forms JMdict tags only as irregular/rare/outdated (IRREGULAR) go after every source default (incl. jmed), before OTHER_COST.
 IRREGULAR_COST = 17500
+# Monthly Wikipedia Clickstream clicks (all referrer types summed) of the article titled exactly like a candidate -> sudachi-small
+# scale: clicks quantiles 1,2,5,10,15,..,95,98,99% matched with the 99,98,95,..,1% quantiles of mozc_cost over the 133,226
+# normalized pairs having both (plausible Mozc cost; kana-only and ASCII surfaces excluded), first knot of each run of equal
+# click values kept, linear in between, clamped outside. Derived once from Clickstream jawiki 2026-10 and Mozc a4541df.
+CLICK_KNOTS = ((10, 11258), (11, 11149), (15, 10903), (24, 10680), (36, 10549), (52, 10421), (71, 10178), (94, 9882), (122, 9796),
+               (156, 9772), (197, 9578), (245, 9384), (308, 9236), (387, 9046), (490, 8459), (622, 8101), (806, 7832), (1067, 7624),
+               (1483, 7404), (2239, 7332), (4100, 6559), (8155, 6337), (13357, 5895))
+# Rows of ranking-only sources attached to candidates by candidate_rows (no vocabulary of their own).
+RANKING_ROWS = {'mozc', 'clickstream'}
 
 
 def pri_cost(pri):
@@ -691,12 +734,22 @@ def pri_cost(pri):
     return PRI_COST['1' if any(t.endswith('1') for t in tags) else '2']
 
 
+def interpolate(knots, x):
+    """Piecewise-linear over (x, y) knots with ascending x, clamped outside."""
+    for (x0, y0), (x1, y1) in zip(knots, knots[1:]):
+        if x <= x1:
+            return round(y0 + (y1 - y0) * (max(x, x0) - x0) / (x1 - x0))
+    return knots[-1][1]
+
+
 def mozc_cost(cost):
-    """Mozc word cost on the sudachi-small scale: piecewise-linear over MOZC_KNOTS."""
-    for (x0, y0), (x1, y1) in zip(MOZC_KNOTS, MOZC_KNOTS[1:]):
-        if cost <= x1:
-            return round(y0 + (y1 - y0) * (max(cost, x0) - x0) / (x1 - x0))
-    return MOZC_KNOTS[-1][1]
+    """Mozc word cost on the sudachi-small scale."""
+    return interpolate(MOZC_KNOTS, cost)
+
+
+def click_cost(clicks):
+    """Monthly Clickstream clicks of a title on the sudachi-small scale (more clicks, lower cost)."""
+    return interpolate(CLICK_KNOTS, clicks)
 
 
 def signal_cost(surface, rows):
@@ -728,10 +781,17 @@ def candidate_order(key, surface, rows, skk_sources=()):
     ranks = [rank for source, rank, *_ in rows if source == 'skk-l']
     if ranks:
         return (0, min(ranks))
-    cost, tie = signal_cost(surface, rows), ('', 0)
+    cost, tie = signal_cost(surface, rows), (0, '', 0)
     if cost is None:
-        cost, source, rank = min((DEFAULT_COST.get(source, OTHER_COST), source, rank) for source, rank, *_ in rows if source != 'mozc')
-        tie = (source, rank if source in skk_sources else 0)
+        cost, source, rank = min((DEFAULT_COST.get(source, OTHER_COST), source, rank) for source, rank, *_ in rows if source not in RANKING_ROWS)
+        # A Wikipedia article title without other signal: its clicks may move it before its source default, never after. Like
+        # the other signals it is shifted when a selected Mozc lacks the word; hold-out vs SKK-JISYO.L (scripts/eval_order.py):
+        # shift 0 0.6817 adjacent, 1500 0.6823, 3000 0.6825, 4500 0.6826, without Clickstream 0.6827; ordering of candidates
+        # without other signal against held-out Mozc order: defaults only 0.5366, shift 0 0.5573, 3000 0.5531, 4500 0.5512.
+        clicks = next((n for source, _, n, *_ in rows if source == 'clickstream'), 0)
+        if clicks:
+            cost = min(cost, click_cost(clicks) + (MOZC_ABSENT_SHIFT if any(row[0] == 'mozc' for row in rows) else 0))
+        tie = (-clicks, source, rank if source in skk_sources else 0)
     if irregular(rows):
         cost = max(cost, IRREGULAR_COST)
     if surface.isascii() and not key.isascii():
@@ -739,8 +799,8 @@ def candidate_order(key, surface, rows, skk_sources=()):
     elif transliteration(key, surface, rows):
         cost = max(cost, TRANSLITERATION_COST)
     # The kana spelling identical to the key goes last: SKK confirms it without conversion.
-    # Ties: more source families (skk, sudachi, jmdict, ...) first, then SKK source order, then code points.
-    families = len({row[0].split('-')[0] for row in rows if row[0] != 'mozc'})
+    # Ties: more source families (skk, sudachi, jmdict, ...) first, then more clicks (no other signal), SKK source order, code points.
+    families = len({row[0].split('-')[0] for row in rows if row[0] not in RANKING_ROWS})
     return (1 + (surface == key and not key.isascii()), cost, -families, *tie, surface)
 
 
@@ -750,9 +810,10 @@ def transliteration(key, surface, rows):
         source == 'jmdict' or source == 'mozc' and plausible_mozc(surface, cost) for source, _, cost, *_ in rows)
 
 
-def candidate_rows(rows, mozc=None):
+def candidate_rows(rows, mozc=None, clicks=None):
     """{surface: [(source, rank, cost, pri, irregular)]} from rows (surface, source, rank, cost, pri[, original_reading[, inf]]);
-    mozc: {surface: cost} of the key, attached as ('mozc', 0, cost, None, False) to existing candidates only."""
+    mozc: {surface: cost} of the key, attached as ('mozc', 0, cost, None, False) to existing candidates only; clicks: {title:
+    clicks}, attached as ('clickstream', 0, clicks, None, False) to existing candidates whose surface is a title."""
     rows = list(rows)
     by_surface = {row[0]: [] for row in rows}
     for surface, source, rank, cost, pri, *extra in rows:
@@ -766,12 +827,16 @@ def candidate_rows(rows, mozc=None):
     if mozc is not None:
         for surface, values in by_surface.items():
             values.append(('mozc', 0, mozc.get(surface), None, False))
+    if clicks:
+        for surface, values in by_surface.items():
+            if surface in clicks:
+                values.append(('clickstream', 0, clicks[surface], None, False))
     return by_surface
 
 
-def nasi_candidates(key, rows, skk_sources=(), mozc=None):
-    """Candidates of one okuri-nasi key in output order; rows and mozc as for candidate_rows."""
-    by_surface = candidate_rows(rows, mozc)
+def nasi_candidates(key, rows, skk_sources=(), mozc=None, clicks=None):
+    """Candidates of one okuri-nasi key in output order; rows, mozc and clicks as for candidate_rows."""
+    by_surface = candidate_rows(rows, mozc, clicks)
     return sorted(by_surface, key=lambda s: candidate_order(key, s, by_surface[s], skk_sources))
 
 
@@ -800,7 +865,7 @@ def okuri_base(pos):
 
 
 def ranking_costs(con, sources, selected):
-    """Stream (reading, {surface: lowest cost}) of the selected ranking-only sources, in reading order."""
+    """Stream (reading, {surface: lowest cost}) of the selected Mozc sources, in reading order."""
     ids = ranking_ids(sources, selected)
     if not ids:
         return iter(())
@@ -810,8 +875,16 @@ def ranking_costs(con, sources, selected):
             for key, rows in itertools.groupby(con.execute(query, ids), key=lambda row: row[0]))
 
 
-def ranking_ids(sources, selected):
-    return [s['id'] for s in sources if s['id'] in selected and s.get('format') in RANKING_FORMATS]
+def ranking_ids(sources, selected, format='mozc'):
+    return [s['id'] for s in sources if s['id'] in selected and s.get('format') == format]
+
+
+def click_counts(con, sources, selected):
+    """{article title: clicks} summed over the selected Clickstream sources, held in memory; None when none is selected."""
+    ids = ranking_ids(sources, selected, 'clickstream')
+    if not ids:
+        return None
+    return dict(con.execute('SELECT surface,sum(clicks) FROM clicks WHERE source IN (' + ','.join('?' * len(ids)) + ') GROUP BY surface', ids))
 
 
 def join_costs(groups, costs):
@@ -856,16 +929,18 @@ def export_skk_tsv(ids, output):
              + " AND kind='nasi' AND scope IN ('all','skk') ORDER BY reading,surface,source")
     groups = itertools.groupby(con.execute(query, selected), key=lambda row: row[0])
     # A second cursor streams Mozc costs alongside; candidates still come only from entries.
+    clicks = click_counts(con, sources, selected)
     nasi = (('nasi', key, surface) for key, rows, mozc in join_costs(groups, ranking_costs(con, sources, selected))
-            for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources, mozc))
+            for surface in nasi_candidates(key, (row[1:] for row in rows), skk_sources, mozc, clicks))
     records = itertools.chain((('ari', key, surface) for key in sorted(ari, reverse=True) for surface in ari[key]), nasi)
     try:
         return write_export(output, records, sources, selected,
                             'kind (ari/nasi) TAB key TAB candidate in SKK output order; okuri-ari keys descending with upstream SKK candidates by source then source order, '
                             'then rule-generated ones (Sudachi inflected forms / JMdict conjugation tables split into stem+okuri letter) by the estimated cost of their dictionary form; '
                             'okuri-nasi keys ascending with skk-l candidates first in SKK-JISYO.L order, then by estimated cost (Mozc OSS cost when selected and present, '
-                            'else sudachi-small cost/JMdict priority, source defaults; JMdict irregular/rare/outdated-only forms after source defaults; JMdict search-only forms excluded); '
-                            'Mozc ranks only and adds no candidates; normalization as the RustMigemo TSV', dict(okuri_ari=dict(sorted(origin.items()))))
+                            'else sudachi-small cost/JMdict priority, else the Wikipedia Clickstream clicks of an article titled like the candidate when selected and before the source default, '
+                            'else source defaults; JMdict irregular/rare/outdated-only forms after source defaults; JMdict search-only forms excluded); '
+                            'Mozc and Clickstream rank only and add no candidates; normalization as the RustMigemo TSV', dict(okuri_ari=dict(sorted(origin.items()))))
     finally:
         con.close()
 
@@ -934,7 +1009,9 @@ def export_skk(tsv, output, release_headers=()):
                                     'or JMdict conjugation tables; no generative AI) by the okuri-nasi cost of their dictionary form; okuri-nasi: as in the input TSV '
                                     '(jisyo.py: skk-l first in SKK-JISYO.L order, then ascending estimated cost on the sudachi-small scale: '
                                     'Mozc OSS word cost (ranking-only source, quantile-mapped) when selected and present, otherwise sudachi-small cost '
-                                    'or JMdict priority tags (+ a shift when missing from a selected Mozc), then per-source defaults; JMdict forms tagged only '
+                                    'or JMdict priority tags (+ a shift when missing from a selected Mozc); without those, the monthly Wikipedia Clickstream clicks '
+                                    '(ranking-only source, CC0) of the article titled exactly like the candidate, quantile-mapped and shifted like the other '
+                                    'signals, when that comes before the per-source default; then per-source defaults; JMdict forms tagged only '
                                     'irregular/rare/outdated after the defaults; katakana spellings of the key without JMdict/Mozc evidence after other words, '
                                     'ASCII after those, kana-identical candidates last); not measured usage frequency; use after personal/base SKK dictionaries',
                     exclusions='unrepresentable plain SKK keys/candidates omitted; no Lisp expressions emitted; JMdict search-only forms (sK/sk) omitted')

@@ -558,5 +558,138 @@ class MozcTests(unittest.TestCase):
                          [('あ', 1, {'亜': 1}), ('い', 2, {}), ('う', 3, {'有': 3}), ('お', 4, {})])
 
 
+def clickstream_gz(rows):
+    import gzip
+    return gzip.compress(''.join('\t'.join(map(str, row)) + '\n' for row in rows).encode())
+
+
+class ClickstreamTests(unittest.TestCase):
+    ROWS = [('other-search', '田中_(曖昧さ回避)', 'external', 50), ('other-search', '多那珂', 'external', 900),
+            ('他中', '多那珂', 'link', 100), ('other-empty', '田仲', 'external', 30), ('多那珂', '田仲', 'other', 12),
+            ('other-search', '田中', 'external', 5000), ('other-search', 'Foo_Bar', 'external', 10)]
+
+    def build(self, root, sources):
+        lock = []
+        for id, format, data in sources:
+            folder = root/'raw'/id
+            folder.mkdir(parents=True)
+            (folder/'source').write_bytes(data if isinstance(data, bytes) else data.encode())
+            lock.append(dict(id=id, format=format, encoding='utf-8', sha256=jisyo.digest(folder/'source'), notice_files=[]))
+        jisyo.ingest(lock)
+
+    def test_parser_sums_clicks_per_title(self):
+        from contextlib import closing
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            with patch.multiple(jisyo, DB=root/'db.sqlite', CACHE=root/'raw', ROOT=root):
+                self.build(root, [('skk-l', 'skk', 'たなか /田中/\n'), ('clickstream', 'clickstream', clickstream_gz(self.ROWS))])
+                with closing(sqlite3.connect(root/'db.sqlite')) as db:
+                    # Every referrer type counts; titles keep parentheses, _ becomes a space; no readings, no vocabulary.
+                    self.assertEqual(db.execute('SELECT surface,clicks FROM clicks ORDER BY surface').fetchall(),
+                                     [('Foo Bar', 10), ('多那珂', 1000), ('田中', 5000), ('田中 (曖昧さ回避)', 50), ('田仲', 42)])
+                    self.assertEqual(db.execute("SELECT COUNT(*) FROM entries WHERE source='clickstream'").fetchone()[0], 0)
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM costs').fetchone()[0], 0)
+                    clicks = jisyo.click_counts(db, [dict(id='clickstream', format='clickstream')], ['clickstream'])
+                    self.assertEqual(clicks['田仲'], 42)
+                    self.assertIsNone(jisyo.click_counts(db, [dict(id='clickstream', format='clickstream')], ['skk-l']))
+                report = json.loads((root/'data/import-report.json').read_text())
+                self.assertEqual(report['clickstream'], {'parsed_pairs': 7, 'unique_source_pairs': 5})
+                self.assertEqual(report['totals']['ranking_titles'], 5)
+                for bad in [[('a', 'b', 'link')], [('a', 'b', 'redlink', 10)], [('a', 'b', 'link', 'x')]]:
+                    (root/'raw/clickstream/source').write_bytes(clickstream_gz(bad))
+                    with self.assertRaisesRegex(ValueError, 'Clickstream'):
+                        list(jisyo.rows(dict(id='clickstream', format='clickstream',
+                                             sha256=jisyo.digest(root/'raw/clickstream/source')), Counter()))
+
+    def test_ranking_only_and_order_with_clickstream_present_or_absent(self):
+        E = jisyo.Entry
+        parsed = {'skk-l': [E('たなか', '田中', ''), E('たなか', '棚加', '')],
+                  'skk-jinmei': [E('たなか', '田仲', ''), E('たなか', '多那珂', ''), E('たなか', '田名可', '')],
+                  'sudachi-small': [E('たなか', '店中', '', cost=9000)],
+                  'jmnedict': [E('たなか', '多那珂', ''), E('たなか', '田奈加', '')],
+                  'jmdict': [E('かく', '書く', '', pri='ichi1'), E('かk', '書', 'okuri-rule|v5k|かく|書く', 'ari', 'skk',
+                                                                   confidence=jisyo.GENERATED)]}
+        clicks = clickstream_gz(self.ROWS + [('other-search', '書く', 'external', 10 ** 6), ('other-search', '店中', 'external', 10 ** 6),
+                                             ('other-search', '田奈加', 'external', 300)])
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            real = jisyo.rows
+            def fake_rows(source, stats):
+                return real(source, stats) if source['id'] == 'clickstream' else iter(parsed[source['id']])
+            with patch.multiple(jisyo, DB=root/'db.sqlite', CACHE=root/'raw', ROOT=root, rows=fake_rows):
+                self.build(root, [(id, 'skk' if id.startswith('skk') else 'x', '') for id in parsed] + [('clickstream', 'clickstream', clicks)])
+                with patch.object(jisyo, 'write_export', lambda output, records, *_: list(records)):
+                    without = list(parsed)
+                    self.assertEqual(jisyo.export(None, root/'m'), jisyo.export(without, root/'m'))
+                    def skk(ids):
+                        result = {}
+                        for kind, key, surface in jisyo.export_skk_tsv(ids, root/'x'):
+                            result.setdefault((kind, key), []).append(surface)
+                        return result
+                    present, absent = skk(None), skk(without)
+                    self.assertEqual({k: sorted(v) for k, v in present.items()}, {k: sorted(v) for k, v in absent.items()})
+                    # skk-l first in L order; 店中 keeps its Sudachi cost 9000 despite its clicks; titles without other signal
+                    # get the cost of their clicks (no Mozc selected, so unshifted): 多那珂 1000 before 店中, 田奈加 300 and 田仲 42
+                    # after it, all before the untitled skk-jinmei default 田名可.
+                    self.assertEqual(absent[('nasi', 'たなか')], ['田中', '棚加', '店中', '多那珂', '田仲', '田名可', '田奈加'])
+                    self.assertEqual(present[('nasi', 'たなか')], ['田中', '棚加', '多那珂', '店中', '田奈加', '田仲', '田名可'])
+                    self.assertEqual(present[('ari', 'かk')], absent[('ari', 'かk')])
+                    self.assertEqual(skk(['clickstream']), {})
+                with self.assertRaisesRegex(ValueError, 'No pairs'):
+                    jisyo.export(['clickstream'], root/'clickstream-only.tsv')
+
+    def test_precedence_after_mozc_sudachi_jmdict_and_before_defaults(self):
+        def order(key, rows, mozc=None, clicks=None):
+            return jisyo.nasi_candidates(key, rows, {'skk-l', 'skk-jinmei'}, mozc, clicks)
+        rows = [('佐藤', 'skk-l', 1, None, None), ('砂糖', 'sudachi-small', 2, 6000, None), ('左藤', 'jmdict', 3, None, 'spec1'),
+                ('座頭', 'skk-jinmei', 4, None, None), ('佐東', 'skk-jinmei', 5, None, None), ('沙棠', 'jmed', 6, None, None),
+                ('サトウ', 'jawiki', 7, None, None)]
+        clicks = {'佐藤': 10 ** 6, '砂糖': 10, '左藤': 10 ** 6, '佐東': 50, '沙棠': 400, 'サトウ': 10 ** 6}
+        self.assertEqual(order('さとう', rows), ['佐藤', '砂糖', '左藤', '座頭', '佐東', '沙棠', 'サトウ'])
+        # Signals keep their costs; titled candidates without signal by clicks, never after their default (座頭 untitled);
+        # the katakana spelling of the key stays a transliteration.
+        self.assertEqual(order('さとう', rows, clicks=clicks), ['佐藤', '砂糖', '左藤', '沙棠', '佐東', '座頭', 'サトウ'])
+        # Mozc decides when present, and its absence shifts Clickstream like the Sudachi/JMdict signals.
+        self.assertEqual(order('さとう', rows, {'沙棠': 11000, '佐東': 4000}, clicks), ['佐藤', '佐東', '砂糖', '左藤', '沙棠', '座頭', 'サトウ'])
+        self.assertEqual(order('さとう', rows, {'座頭': 5000}, clicks), ['佐藤', '座頭', '砂糖', '左藤', '沙棠', '佐東', 'サトウ'])
+        by = jisyo.candidate_rows(rows, {}, clicks)
+        self.assertEqual(jisyo.candidate_order('さとう', '沙棠', by['沙棠'])[1], jisyo.click_cost(400) + jisyo.MOZC_ABSENT_SHIFT)
+        by = jisyo.candidate_rows(rows, None, clicks)
+        self.assertEqual(jisyo.candidate_order('さとう', '沙棠', by['沙棠'])[1], jisyo.click_cost(400))
+        self.assertEqual(jisyo.candidate_order('さとう', '座頭', by['座頭'])[1], jisyo.DEFAULT_COST['skk-jinmei'])
+        # Few clicks (+ the Mozc-absent shift) never push a candidate after its source default.
+        few = jisyo.candidate_rows([('里卯', 'jmdict', 1, None, None)], {}, {'里卯': 10})
+        self.assertEqual(jisyo.candidate_order('さとう', '里卯', few['里卯'])[1:3], (jisyo.DEFAULT_COST['jmdict'], -1))
+        self.assertEqual(jisyo.signal_cost('沙棠', by['沙棠']), None)
+        # Families ignore ranking rows; empty or unrelated clicks change nothing.
+        self.assertEqual(order('さとう', rows, clicks={}), order('さとう', rows))
+        self.assertEqual(order('さとう', rows, clicks={'無関係': 5}), order('さとう', rows))
+        knots = jisyo.CLICK_KNOTS
+        self.assertEqual([x for x, _ in knots], sorted({x for x, _ in knots}))
+        self.assertEqual([y for _, y in knots], sorted({y for _, y in knots}, reverse=True))
+        self.assertEqual(jisyo.click_cost(1), knots[0][1])
+        self.assertEqual(jisyo.click_cost(10 ** 9), knots[-1][1])
+        self.assertGreater(jisyo.click_cost(knots[3][0]), jisyo.click_cost(knots[3][0] + 1))
+        self.assertLess(knots[0][1], min(jisyo.DEFAULT_COST.values()))
+
+    def test_update_selects_newest_month_with_jawiki_file(self):
+        index = ''.join(f'<a href="{m}/">{m}/</a>\n' for m in ['2026-08', '2026-10', '2026-09']) + '<a href="readme.html">readme.html</a>'
+        listings = {'2026-10': '<a href="clickstream-dewiki-2026-10.tsv.gz">x</a>',
+                    '2026-09': '<a href="clickstream-jawiki-2026-09.tsv.gz">x</a>', '2026-08': '<a href="clickstream-jawiki-2026-08.tsv.gz">x</a>'}
+        seen = []
+        def listing(month):
+            seen.append(month)
+            return listings[month]
+        # The newest directory exists before its jawiki file: the previous month is used.
+        self.assertEqual(jisyo.clickstream_month(index, listing), '2026-09')
+        self.assertEqual(seen, ['2026-10', '2026-09'])
+        listings['2026-10'] += '<a href="clickstream-jawiki-2026-10.tsv.gz">x</a>'
+        self.assertEqual(jisyo.clickstream_month(index, listing), '2026-10')
+        with self.assertRaisesRegex(ValueError, 'No jawiki Clickstream'):
+            jisyo.clickstream_month(index, lambda month: '', tries=3)
+        with self.assertRaisesRegex(ValueError, 'No jawiki Clickstream'):
+            jisyo.clickstream_month('<a href="../">../</a>', listing)
+
+
 if __name__ == '__main__':
     unittest.main()

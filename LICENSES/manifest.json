@@ -347,6 +347,22 @@
       "source_url": "https://raw.githubusercontent.com/google/mozc/a4541df29db443b49f81cf54665873b68fde9efa/src/data/dictionary_oss/README.txt",
       "sha256": "6b1de66bc6fa30e0b45dc45b8c8f6c57bd78aff923c261a3efffac8eb86f7bac",
       "bytes": 5750
+    },
+    {
+      "file": "third_party/licenses/clickstream/notice-0.txt",
+      "source_id": "clickstream",
+      "source_version": "2026-10",
+      "source_url": "https://dumps.wikimedia.org/other/clickstream/readme.html",
+      "sha256": "80b8676c0dbcfbc605986dea4567388ef9f6bdb5ec9f1fa89d8b90796126db09",
+      "bytes": 2050
+    },
+    {
+      "file": "third_party/licenses/clickstream/notice-1.txt",
+      "source_id": "clickstream",
+      "source_version": "2026-10",
+      "source_url": "https://dumps.wikimedia.org/legal.html",
+      "sha256": "3c0d0485455a489af64983a5c13349970718a8f12e056479d40a15311ca7653e",
+      "bytes": 6765
     }
   ]
 }

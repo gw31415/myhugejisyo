@@ -486,6 +486,34 @@
       ]
     },
     {
+      "id": "clickstream",
+      "format": "clickstream",
+      "url": "https://dumps.wikimedia.org/other/clickstream/2026-10/clickstream-jawiki-2026-10.tsv.gz",
+      "version": "2026-10",
+      "license": "CC0-1.0 (Wikimedia Analytics datasets); article title click counts used for candidate order only",
+      "homepage": "https://meta.wikimedia.org/wiki/Research:Wikipedia_clickstream",
+      "notices": [
+        "https://dumps.wikimedia.org/other/clickstream/readme.html",
+        "https://dumps.wikimedia.org/legal.html"
+      ],
+      "sha256": "cc6e6babecc216e18c69831baaddb968e7259293e00abd9886e61220fd01dfc0",
+      "bytes": 87219292,
+      "fetched_at": "2026-11-12T12:19:00+00:00",
+      "last_modified": "Tue, 03 Nov 2026 01:10:31 GMT",
+      "notice_files": [
+        {
+          "url": "https://dumps.wikimedia.org/other/clickstream/readme.html",
+          "file": "notice-0.txt",
+          "sha256": "80b8676c0dbcfbc605986dea4567388ef9f6bdb5ec9f1fa89d8b90796126db09"
+        },
+        {
+          "url": "https://dumps.wikimedia.org/legal.html",
+          "file": "notice-1.txt",
+          "sha256": "3c0d0485455a489af64983a5c13349970718a8f12e056479d40a15311ca7653e"
+        }
+      ]
+    },
+    {
       "id": "jawiki",
       "format": "skk",
       "url": "https://github.com/tokuhirom/jawiki-kana-kanji-dict/releases/download/v2026.09.21.185756/SKK-JISYO.jawiki",
