@@ -21,12 +21,13 @@ if __name__ == '__main__':
     output.mkdir(exist_ok=True)
     for profile, record in info['profiles'].items():
         tsv = ROOT/'editable'/(profile+'.tsv')
+        skk_tsv = ROOT/'editable'/(profile+'.skk.tsv')
         for name, expected in record['dictionary_sha256'].items():
             path = output/name
             if name.startswith('migemo-'):
                 subprocess.run([str(ROOT/'target/release/myhugejisyo'), 'build', str(tsv), str(path)], check=True)
             else:
-                jisyo.export_skk(tsv, path, skk_headers(info, profile))
+                jisyo.export_skk(skk_tsv, path, skk_headers(info, profile))
             if not args.allow_changes and jisyo.digest(path) != expected:
                 raise ValueError(f'Rebuild differs: {name}')
     print('Rebuilt all profiles; original hashes matched' if not args.allow_changes else 'Rebuilt edited dictionaries')

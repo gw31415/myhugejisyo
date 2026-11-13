@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from release_metadata import archive_directory, release_identity, skk_headers
+from release_metadata import LICENSES, archive_directory, release_identity, skk_headers
 from verify_release import REQUIRED, verify_archive
 import jisyo
 
@@ -69,8 +69,8 @@ class ReleaseTests(unittest.TestCase):
     def test_skk_reproducible_release_headers(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            tsv = root/'all.tsv'
-            tsv.write_text('あ\t亜\n')
+            tsv = root/'all.skk.tsv'
+            tsv.write_text('ari\tあk\t開\nnasi\tあ\t亜\n')
             Path(str(tsv)+'.manifest.json').write_text('{}')
             info = dict(modifier='maintainers', generated_at='2026-09-24T00:00:00Z', tag='test-1',
                         corresponding_source_url='https://example.com/test-1/dictionary-sources.tar.gz')
@@ -78,7 +78,21 @@ class ReleaseTests(unittest.TestCase):
                 jisyo.export_skk(tsv, root/name, skk_headers(info, 'all'))
             self.assertEqual((root/'first').read_bytes(), (root/'second').read_bytes())
             self.assertIn('GPL-3.0-only', (root/'first').read_text())
+            self.assertTrue((root/'first').read_text().endswith(';; okuri-ari entries.\nあk /開/\n;; okuri-nasi entries.\nあ /亜/\n'))
             self.assertIn(info['corresponding_source_url'], (root/'first').read_text())
+
+    def test_ranking_sources_gpl_profiles_only(self):
+        import release
+        lock = json.loads(jisyo.LOCK.read_text())['sources']
+        ranking = [s['id'] for s in lock if s['format'] in jisyo.RANKING_FORMATS]
+        self.assertEqual(ranking, release.RANKING)
+        self.assertEqual(release.RANKING, release.MOZC + ['clickstream'])
+        self.assertEqual(len(release.MOZC), 10)
+        for profile, ids in release.PROFILES.items():
+            used = set(ranking) & set(ids)
+            # CC-BY(-SA) profiles neither rank with nor ship Mozc or Clickstream; GPL profiles archive all eleven files.
+            self.assertEqual(used, set(ranking) if LICENSES[profile] == 'GPL-3.0-only' else set(), profile)
+        self.assertEqual(set(release.PROFILES['edrdg'] + release.PROFILES['medical']) & set(ranking), set())
 
     def test_release_identity_rejects_unsafe_tag(self):
         with self.assertRaises(ValueError):

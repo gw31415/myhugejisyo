@@ -50,7 +50,8 @@ def verify_archive(path):
                 if files.get('data/raw/'+source['id']+'/source') != source['sha256']:
                     raise ValueError('Archived input does not match lock')
             for profile, record in info['profiles'].items():
-                if files.get('editable/'+profile+'.tsv') != record['tsv_sha256']:
+                if (files.get('editable/'+profile+'.tsv') != record['tsv_sha256']
+                        or files.get('editable/'+profile+'.skk.tsv') != record['skk_tsv_sha256']):
                     raise ValueError('Missing or mismatched editable vocabulary')
         else:
             profile = path.name.removesuffix('-dictionaries.tar.gz')
