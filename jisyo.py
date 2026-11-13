@@ -9,6 +9,7 @@ import csv
 import gzip
 import hashlib
 import html
+import http.client
 import io
 import itertools
 import json
@@ -71,8 +72,12 @@ JMDICT_OKURI = {
 OKURI_EXCLUDED = {'サ行変格', '下一段-タ行', '上一段-ハ行', 'vs-c'}
 
 
+# Seconds to wait before each retry of a failed download; upstream hosts (edrdg.org) drop connections for minutes at a time.
+RETRY_WAITS = (5, 20, 60, 120, 240)
+
+
 def request(url):
-    return urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'myhugejisyo/0.1'}), timeout=90)
+    return urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'myhugejisyo/0.1'}), timeout=60)
 
 
 def remote_json(url):
@@ -178,23 +183,26 @@ def download(source, refresh=False):
         pass
     else:
         tmp = folder / 'source.part'
-        for attempt in range(3):
+        for wait in (*RETRY_WAITS, None):
             try:
                 with request(source['url']) as r, tmp.open('wb') as f:
                     shutil.copyfileobj(r, f)
                     modified = r.headers.get('Last-Modified')
-                checksum = digest(tmp)
-                if source.get('sha256') and checksum != source['sha256']:
-                    raise ValueError(f"{source['id']}: upstream changed; run fetch --update explicitly")
-                tmp.replace(path)
-                source.update(sha256=checksum, bytes=path.stat().st_size,
-                              fetched_at=datetime.now(timezone.utc).isoformat(), last_modified=modified)
-                break
-            except Exception:
+            except (OSError, http.client.HTTPException) as error:  # a changed upstream (below) is not retried
                 tmp.unlink(missing_ok=True)
-                if attempt == 2:
-                    raise
-                time.sleep(attempt + 1)
+                if wait is None:
+                    raise RuntimeError(f"{source['id']}: cannot download {source['url']}: {error}") from error
+                print(f"retrying {source['id']} in {wait}s: {error}", file=sys.stderr, flush=True)
+                time.sleep(wait)
+                continue
+            checksum = digest(tmp)
+            if source.get('sha256') and checksum != source['sha256']:
+                tmp.unlink(missing_ok=True)
+                raise ValueError(f"{source['id']}: upstream changed; run fetch --update explicitly")
+            tmp.replace(path)
+            source.update(sha256=checksum, bytes=path.stat().st_size,
+                          fetched_at=datetime.now(timezone.utc).isoformat(), last_modified=modified)
+            break
     notice_records = source.get('notice_files', [])
     if not notice_records:
         notice_records = [dict(url=url, file=f'notice-{i}.txt') for i, url in enumerate(source['notices'])]
