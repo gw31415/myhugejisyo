@@ -981,6 +981,15 @@ def export_skk_tsv(ids, output):
 SKK_ENTRY_CHARS = 30000
 
 
+def joins_previous(char):
+    """Characters that form one grapheme cluster with the character before them: combining marks, emoji skin-tone
+    modifiers, joiners, halfwidth (han)dakuten and tag characters. A candidate starting with one fuses with the '/' before
+    it for readers that split on user-perceived characters (macSKK is written in Swift), which then reject the line."""
+    code = ord(char)
+    return (unicodedata.category(char) in ('Mn', 'Me', 'Mc') or 0x1F3FB <= code <= 0x1F3FF or char in '\u200c\u200d\uff9e\uff9f'
+            or 0xE0020 <= code <= 0xE007F)
+
+
 def export_skk(tsv, output, release_headers=()):
     """UTF-8 SKK dictionary from export_skk_tsv order; plain candidates only."""
     output = Path(output)
@@ -995,7 +1004,7 @@ def export_skk(tsv, output, release_headers=()):
                 and bool(re.search('[ぁ-ゖー][a-z]$', key)) == (kind == 'ari'))
     def valid_candidate(value):
         return (value and not any(c in value for c in '/;#[]')
-                and not value.startswith('('))
+                and not value.startswith('(') and not joins_previous(value[0]))
     try:
         with open(tsv, encoding='utf-8') as source, tmp.open('w', encoding='utf-8', newline='\n') as dest:
             dest.write(';; -*- mode: fundamental; coding: utf-8 -*-\n'

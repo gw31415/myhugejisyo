@@ -160,6 +160,8 @@ class ConversionTests(unittest.TestCase):
         import json
         pairs = sorted([('けんさく', '検索'), ('けんさく', '研削'),
                         ('きごう', 'a/b'), ('きごう', '(evil)'), ('きごう', 'a;b'),
+                        # A leading skin-tone modifier, combining mark or halfwidth dakuten would fuse with the '/' before it.
+                        ('きごう', '\U0001f3fb'), ('きごう', '\u3099か'), ('きごう', '\uff9f+.'),
                         ('あ a', '空白キー'), ('かk', '書'), ('よし', '𠮷'), ('きごう', '記号')])
         with tempfile.TemporaryDirectory() as d:
             tsv = Path(d)/'input.tsv'
@@ -172,7 +174,7 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual(actual, [('きごう', '記号', ''), ('けんさく', '検索', ''), ('けんさく', '研削', ''), ('よし', '𠮷', '')])
             self.assertEqual(manifest['skk']['pairs'], 4)
             self.assertEqual(manifest['skk']['unsupported_key_pairs'], 2)
-            self.assertEqual(manifest['skk']['unsafe_candidate_pairs'], 3)
+            self.assertEqual(manifest['skk']['unsafe_candidate_pairs'], 6)
             original = out.read_bytes()
             for bad in ['nasi\tよし\t𠮷\nnasi\tあ\t亜\n', 'ari\tあk\t開\nari\tかk\t書\n', 'nasi\tあ\t亜\nari\tかk\t書\n']:
                 tsv.write_text(bad)
