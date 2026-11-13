@@ -128,6 +128,18 @@ class ConversionTests(unittest.TestCase):
             self.assertEqual(out.read_text(encoding='utf-8').splitlines()[-2:], ['きごう /記号/揮毫/', 'けんさく /検索/'])
             self.assertEqual(manifest['skk']['overlong_entry_pairs'], 2)
 
+    def test_download_retries_connection_failures_and_names_the_url(self):
+        class Response(io.BytesIO):
+            headers = {}
+        source = dict(id='jmdict', url='https://example.invalid/JMdict_e.gz', notices=[])
+        with tempfile.TemporaryDirectory() as d, patch.object(jisyo, 'CACHE', Path(d)), patch.object(jisyo.time, 'sleep') as sleep:
+            with patch.object(jisyo, 'request', side_effect=[TimeoutError('timed out'), OSError('reset'), Response(b'data')]):
+                fetched = jisyo.download(dict(source))
+            self.assertEqual((fetched['bytes'], [c.args[0] for c in sleep.call_args_list]), (4, list(jisyo.RETRY_WAITS[:2])))
+            with patch.object(jisyo, 'request', side_effect=TimeoutError('timed out')):
+                with self.assertRaisesRegex(RuntimeError, 'jmdict: cannot download https://example.invalid/JMdict_e.gz'):
+                    jisyo.download(dict(source), refresh=True)
+
     def test_materialized_vocabulary_input(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
