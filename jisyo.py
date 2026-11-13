@@ -531,6 +531,10 @@ def rows(source, stats):
                 columns = {v.strip(): k for k, v in header.items()}
                 rc, sc = columns['出現形よみ'], columns['出現形']
                 for row in iterator:
+                    # The workbooks write -1 where no reading is known; as a key it would collect thousands of unrelated terms.
+                    if row.get(rc, '').strip() == '-1':
+                        stats['jmed_without_reading'] += 1
+                        continue
                     yield Entry(row.get(rc, ''), row.get(sc, ''), Path(name).stem)
     else:
         raise ValueError(f'Unknown format: {fmt}')
@@ -964,6 +968,11 @@ def export_skk_tsv(ids, output):
         con.close()
 
 
+# skkeleton's Deno KV source stores one entry per value and a value holds at most 64 KiB (UTF-16 in V8's serialization),
+# and one oversized entry aborts its whole import; candidates past this many characters of a key are dropped (lowest ranked).
+SKK_ENTRY_CHARS = 30000
+
+
 def export_skk(tsv, output, release_headers=()):
     """UTF-8 SKK dictionary from export_skk_tsv order; plain candidates only."""
     output = Path(output)
@@ -972,6 +981,7 @@ def export_skk(tsv, output, release_headers=()):
     stats = Counter()
     previous = None
     candidates = []
+    size = 0
     def valid_key(kind, key):
         return (key and not any(c.isspace() or c in '/;#[]' for c in key) and not key.startswith(';')
                 and bool(re.search('[ぁ-ゖー][a-z]$', key)) == (kind == 'ari'))
@@ -1000,6 +1010,7 @@ def export_skk(tsv, output, release_headers=()):
                     if kind == 'nasi' and (not previous or previous[0] == 'ari'):
                         dest.write(';; okuri-nasi entries.\n')
                     candidates = []
+                    size = len(key)
                     previous = kind, key
                 if not valid_key(kind, key):
                     stats['unsupported_key_pairs'] += 1
@@ -1007,7 +1018,10 @@ def export_skk(tsv, output, release_headers=()):
                     stats['unsafe_candidate_pairs'] += 1
                 elif value in candidates:
                     stats['duplicate_pairs'] += 1
+                elif size + len(value) + 1 > SKK_ENTRY_CHARS:
+                    stats['overlong_entry_pairs'] += 1
                 else:
+                    size += len(value) + 1
                     candidates.append(value)
                     stats[kind + '_pairs'] += 1
             flush()

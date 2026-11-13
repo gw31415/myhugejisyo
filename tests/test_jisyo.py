@@ -96,6 +96,38 @@ class ConversionTests(unittest.TestCase):
             z.writestr('xl/worksheets/sheet1.xml', '<worksheet xmlns="'+jisyo.NS['m']+'"><sheetData><row><c r="A1" t="s"><v>0</v></c><c r="C1" t="inlineStr"><is><t>表記</t></is></c></row><row><c r="A2" t="inlineStr"/><c r="C2" t="inlineStr"><is><t>検索</t></is></c></row></sheetData></worksheet>')
         self.assertEqual(list(jisyo.xlsx_rows(data.getvalue())), [{'A': '読み', 'C': '表記'}, {'A': '', 'C': '検索'}])
 
+    def test_jmed_rows_without_reading_are_skipped(self):
+        def cell(ref, text):
+            return '<c r="'+ref+'" t="inlineStr"><is><t>'+text+'</t></is></c>'
+        table = [('出現形よみ', '出現形'), ('しんきんこうそく', '心筋梗塞'), ('-1', 'α‐しゃ断薬')]
+        sheet = ''.join('<row>'+cell('A%d' % i, r)+cell('B%d' % i, w)+'</row>' for i, (r, w) in enumerate(table, 1))
+        book = io.BytesIO()
+        with zipfile.ZipFile(book, 'w') as z:
+            z.writestr('xl/worksheets/sheet1.xml', '<worksheet xmlns="'+jisyo.NS['m']+'"><sheetData>'+sheet+'</sheetData></worksheet>')
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root/'jmed').mkdir()
+            path = root/'jmed'/'source'
+            with zipfile.ZipFile(path, 'w') as z:
+                z.writestr('DISEASE_mini.xlsx', book.getvalue())
+            stats = Counter()
+            with patch.object(jisyo, 'CACHE', root):
+                found = [e[:3] for e in jisyo.rows({'id': 'jmed', 'format': 'jmed', 'sha256': jisyo.digest(path)}, stats)]
+            self.assertEqual(found, [('しんきんこうそく', '心筋梗塞', 'DISEASE_mini')])
+            self.assertEqual(stats['jmed_without_reading'], 1)
+
+    def test_skk_entry_drops_candidates_past_the_size_limit(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            tsv = Path(d)/'input.tsv'
+            tsv.write_text(''.join('nasi\tきごう\t'+v+'\n' for v in ['記号', '揮毫', '〆', '機構']) + 'nasi\tけんさく\t検索\n', encoding='utf-8')
+            Path(str(tsv)+'.manifest.json').write_text(json.dumps({'sources': []}))
+            out = Path(d)/'SKK-JISYO.test.utf8'
+            with patch.object(jisyo, 'SKK_ENTRY_CHARS', 9):
+                manifest = jisyo.export_skk(tsv, out)
+            self.assertEqual(out.read_text(encoding='utf-8').splitlines()[-2:], ['きごう /記号/揮毫/', 'けんさく /検索/'])
+            self.assertEqual(manifest['skk']['overlong_entry_pairs'], 2)
+
     def test_materialized_vocabulary_input(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
